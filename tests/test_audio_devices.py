@@ -481,7 +481,9 @@ def test_the_render_device_reports_its_output_channel_count() -> None:
     reports 0 inputs, and a keep-alive opened with 0 channels raises in the C layer."""
     pa = FakePyAudio(
         table=[
-            raw_endpoint(24, "Headphones (Astro A50 Game)", host_api=WASAPI, outputs=2, rate=44_100),
+            raw_endpoint(
+                24, "Headphones (Astro A50 Game)", host_api=WASAPI, outputs=2, rate=44_100
+            ),
             raw_endpoint(
                 33, "Headphones (Astro A50 Game) [Loopback]", host_api=WASAPI, inputs=2
             ),
