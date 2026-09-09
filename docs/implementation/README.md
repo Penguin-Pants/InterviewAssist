@@ -12,10 +12,13 @@ restating them — so a change in one place propagates by reference, not by copy
 | 04 | [Test Strategy](./04-test-strategy.md) | How each guarantee is verified, including the ones that resist automation |
 | 05 | [Traceability](./05-traceability.md) | Requirement → design → task → test, with no gaps |
 | 06 | [**Progress**](./06-progress.md) | **What is built, what is verified, what is blocked, and the next action.** Start here when resuming after a gap. |
+| 07 | [Context Sources & Report](./07-context-sources-and-report.md) | M10/M11 scope added 2026-08-10, after 00–06 were first written: typed context sources (FR66–FR73) and the post-interview report (FR74–FR87). Both milestones are complete — see 06. Not yet folded into 01/03/05's numbering. |
 
 **Upstream sources:** [product plan](../interviewpreprecallprd.md) ·
 [safety review](../build-plan-safety-review.md) ·
-[PRISM design system](../prism-design-system.md) — governs every UI surface (D-17)
+[PRISM design system](../prism-design-system.md) — governs every UI surface (D-17) ·
+[Handy reference review](../handy-reference-review.md) — a shipping local-only STT app, read for
+D-U12's local-first startup; feeds OQ-10 and OQ-11
 
 ## ID scheme
 

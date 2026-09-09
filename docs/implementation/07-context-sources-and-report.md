@@ -1,6 +1,7 @@
 # Typed Context Sources & Post-Interview Report
 
-**Status:** specified, not yet built. Milestones **M10** and **M11**.
+**Status:** built. **M10** (T10.1–T10.7) and **M11** (T11.1, T11.3–T11.10 + a/b/c) are complete
+per `06-progress.md`; only T11.2's DPAPI cipher binding still needs the Windows target machine.
 **Origin:** user request, 2026-08-10, with three product decisions taken via D-U8/D-U9/D-U10 below.
 
 This document owns two features. They are separable and are deliberately separated: M10 is

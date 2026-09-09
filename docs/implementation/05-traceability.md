@@ -6,6 +6,11 @@ column is a requirement nobody will build or verify.
 **Legend:** D§ = [technical design](./02-technical-design.md) section · T = [task](./03-tasks.md) ·
 TS§ = [test strategy](./04-test-strategy.md) section
 
+**Known gap:** FR66–FR87 (M10/M11, added 2026-08-10 — after this matrix was first written) have
+no rows below yet, even though both milestones are complete per `06-progress.md`. Their design,
+task and test references live only in `07-context-sources-and-report.md` for now. Treat the "no
+gaps" claim above as scoped to FR1–FR65 until those rows are backfilled.
+
 | Req | Origin | Design | Task | Test |
 |---|---|---|---|---|
 | FR1a | PRD | D§4 | T3.5, **T3.7a** | Unit + fixture `notes/*` |
