@@ -321,6 +321,11 @@ The Anthropic key for stage-2 matching is covered by FR19 exactly as the STT key
 
 ### Note set schema (`schema_version: 1`)
 
+**This section is the pre-M10 schema and is out of date.** `07-context-sources-and-report.md`
+§5 lists "data model gains `SourceKind` and `ContextSet`" as a required amendment here; M10
+shipped (see `06-progress.md`) but this section was never rewritten. See
+`07-context-sources-and-report.md` §2 for the v2 shape and the v1→v2 migration rule.
+
 ```json
 {
   "schema_version": 1,

@@ -16,7 +16,7 @@ edges:
     condition: when starting a task — check the pattern index for a matching pattern file
   - target: AGENTS.md
     condition: for project identity, non-negotiables, and commands (read at session start)
-last_updated: 2026-08-16
+last_updated: 2026-09-09
 ---
 
 # Session Bootstrap
@@ -27,25 +27,56 @@ Then read this file fully before doing anything else in this session.
 
 ## Current Project State
 
-**Working:**
-- PySide6 overlay UI with real-time editing and checklist tracking
-- Local speech-to-text via faster-whisper (Windows-only WASAPI loopback capture)
-- Session management (pause/resume, state persistence)
-- Notes and findings storage (JSON-based, with backups)
-- Report generation from session context
-- Settings/preferences panel with persistent storage
-- Startup consent disclosure and diagnostics checks
-- Comprehensive test suite covering all major components (pytest + mypy strict on STT interface)
+**Re-verified 2026-09-09 after a ~3.5 week pause. `docs/implementation/06-progress.md` is the
+authoritative build log — read it before trusting this summary. It tracks its own past staleness
+("wrong seven times") with a standing rule: test the reason a task looks blocked, not the label.**
+
+**Working, built, and wired to each other:**
+- PySide6 overlay UI (checklist, indicators, dialogs), embedding-prefilter + Anthropic stage-2
+  note matching, notes store/importer/editor with backup+restore, session state machine, progress
+  tracker, post-interview report generation/view/export-to-Markdown, settings, first-run consent,
+  diagnostics ring buffer. All wired together through `app.py`'s composition root and
+  `ui/main_window.py`.
+- Local Whisper STT backend and both cloud STT backends (Deepgram, ElevenLabs) plus an
+  auto-fallback wrapper — implemented and unit-tested in isolation, but see the top blocker below.
+- Test suite: 1231/1231 passing on Linux (offscreen Qt), mypy `--strict` clean on
+  `stt/interface.py`, ruff clean.
+
+**Top blocker — the app cannot run end-to-end yet:**
+- `interview_prep_recall/__main__.py`'s `_build_application()` unconditionally
+  `raise NotImplementedError` (task T9.6a). No audio capture and no STT backend, local or cloud,
+  is ever constructed or wired into `Application`. Tracked in `06-progress.md`'s Blocked register
+  as waiting on three things: a product decision on the no-API-key policy, the embedding model
+  download (blocked by this dev container's network policy, not by platform), and the
+  Windows-only DPAPI cipher.
+- Consequence: embedding-based note matching **is** fully wired into the UI (this reverses what
+  this file used to say) — it simply never receives an utterance to match, because nothing feeds
+  it one yet.
 
 **Not yet built:**
-- Cloud speech-to-text fallback integration (API client exists, not wired to UI)
-- Embedding-based note semantic matching (infrastructure present, UI not integrated)
-- Multi-session history view and analytics
-- Export to external formats (HTML, PDF, Markdown)
+- Four modules are pure stubs with no logic: `watchdog.py`, `audio/echo.py` (FR57, audio-domain
+  echo detection), `platform/win_capture_exclusion.py` (FR14/14a), `platform/win_wer.py` (FR16).
+- Report export covers Markdown only; HTML/PDF export do not exist.
+- A basic multi-session picker exists (`report/store.list_sessions()`, used by the report view),
+  but there is no history/analytics view beyond it.
 
 **Known issues:**
-- None currently documented; refer to recent git history for resolved issues
-- Environment split: tests run on Linux without WASAPI; UI/windows extras optional. CI runs full test suite on Windows, skipping device markers on Linux.
+- **D-68** (found and fixed 2026-08-16): an idle WASAPI loopback endpoint delivers zero callbacks
+  instead of frames of silence. Fixed with a keep-alive render stream. Unit tests for the fix
+  (T1.5) are not written yet, and the 60-minute soak (T1.6, the AS-2 gate) has only run for 60
+  seconds so far.
+- **AS-1** (local STT latency gate, T2.4) and **AS-3/AS-7** (matching-accuracy gates, T4.7) have
+  NOT been measured yet, despite older notes in `00-decisions-and-assumptions.md` reading as if
+  they had — T4.7 additionally needs the user's hand-labelled transcripts plus an
+  `ANTHROPIC_API_KEY`.
+- **AS-8**: Deepgram/ElevenLabs wire protocols are implemented from documentation only, never
+  verified against a live endpoint.
+- **AS-9**: the local Whisper adapter has never loaded a real model — this dev container blocks
+  `huggingface.co` — so it is untested against the real library.
+- Environment split: this dev container is Linux; the product targets Windows 11. The full test
+  suite (1231 tests) passes here via PySide6's offscreen Qt platform. Windows-only code
+  (DPAPI, WASAPI, `SetWindowDisplayAffinity`, WER suppression) needs the Windows target machine,
+  which became reachable for the first time on 2026-08-16 (see the M1 log entry).
 
 ## Routing Table
 

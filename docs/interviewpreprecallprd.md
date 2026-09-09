@@ -4,6 +4,13 @@
 **Display:** Always-on-top overlay, same screen
 **Video call compatibility:** Platform-agnostic (captures system audio, not tied to Zoom/Meet/Teams APIs)
 
+**This is the original product plan and is superseded where noted.** `docs/implementation/01-requirements.md`
+supersedes §6/§7 below (see its Supersession Notes) and `docs/implementation/07-context-sources-and-report.md`
+reverses this doc's "no persistence" guardrail (§4) and "not a summary tool" non-goal (§3) — a
+persisted encrypted transcript and a post-interview report both shipped in M10/M11, by decisions
+D-U8/D-U9. Epic G (§8, marked "stretch") also shipped as core v1, by D-U1. Treat this file as
+historical intent; `docs/implementation/06-progress.md` is the current source of truth.
+
 ---
 
 ## 1. Problem

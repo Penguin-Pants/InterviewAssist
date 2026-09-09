@@ -6,6 +6,10 @@ where they differ; differences are marked and explained.
 
 **Status key:** `v1` ships in the first release · `post-v1` specified but deferred · `superseded` replaced by another requirement
 
+**Known gap:** FR66–FR87 (typed context sources and the post-interview report, milestones M10/M11,
+added 2026-08-10) are defined in `07-context-sources-and-report.md` and are not yet copied into
+this document. Both milestones are complete — see `06-progress.md`.
+
 Every requirement below states an observable pass condition. If a requirement cannot be
 verified by an automated test or a written manual procedure, it is not a requirement — it is a
 preference, and belongs in the design doc instead.
