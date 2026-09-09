@@ -45,10 +45,16 @@ authoritative build log — read it before trusting this summary. It tracks its 
 **Top blocker — the app cannot run end-to-end yet:**
 - `interview_prep_recall/__main__.py`'s `_build_application()` unconditionally
   `raise NotImplementedError` (task T9.6a). No audio capture and no STT backend, local or cloud,
-  is ever constructed or wired into `Application`. Tracked in `06-progress.md`'s Blocked register
-  as waiting on three things: a product decision on the no-API-key policy, the embedding model
-  download (blocked by this dev container's network policy, not by platform), and the
-  Windows-only DPAPI cipher.
+  is ever constructed or wired into `Application`.
+- **The no-API-key policy that blocked it is now decided: D-U12 (2026-09-09) — local at startup,
+  cloud keys optional.** `Application` requires `client: MessagesClient` with no default today, so
+  making it optional and `Stage2Selector` conditional is new code in `app.py`. The degraded path
+  itself needs none: `MatchingPipeline` already accepts `selector=None`.
+- **What actually blocks T9.6a now is the embedder, and it is bigger than a model download: no
+  concrete `Embedder` implementation has ever been written**, only the Protocol in
+  `notes/index.py`. Until one exists, `Prefilter.candidates()` returns nothing and the overlay
+  matches nothing, model or no model. See OQ-11.
+- DPAPI stays Windows-only, but it does not block a local dev run.
 - Consequence: embedding-based note matching **is** fully wired into the UI (this reverses what
   this file used to say) — it simply never receives an utterance to match, because nothing feeds
   it one yet.
