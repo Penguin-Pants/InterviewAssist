@@ -414,9 +414,7 @@ def test_the_render_device_is_matched_on_host_api_not_name_alone() -> None:
         table=[
             raw_endpoint(5, "Headphones (Astro A50 Game)", host_api=MME, outputs=2),
             raw_endpoint(24, "Headphones (Astro A50 Game)", host_api=WASAPI, outputs=2),
-            raw_endpoint(
-                33, "Headphones (Astro A50 Game) [Loopback]", host_api=WASAPI, inputs=2
-            ),
+            raw_endpoint(33, "Headphones (Astro A50 Game) [Loopback]", host_api=WASAPI, inputs=2),
         ]
     )
 
@@ -430,9 +428,7 @@ def test_a_capture_only_device_is_never_offered_as_the_render_side() -> None:
         table=[
             raw_endpoint(30, "Headphones (Astro A50 Game)", host_api=WASAPI, inputs=2),
             raw_endpoint(24, "Headphones (Astro A50 Game)", host_api=WASAPI, outputs=2),
-            raw_endpoint(
-                33, "Headphones (Astro A50 Game) [Loopback]", host_api=WASAPI, inputs=2
-            ),
+            raw_endpoint(33, "Headphones (Astro A50 Game) [Loopback]", host_api=WASAPI, inputs=2),
         ]
     )
 
@@ -466,9 +462,7 @@ def test_no_matching_render_device_is_a_device_error() -> None:
     pa = FakePyAudio(
         table=[
             raw_endpoint(24, "Some Other Speakers", host_api=WASAPI, outputs=2),
-            raw_endpoint(
-                33, "Headphones (Astro A50 Game) [Loopback]", host_api=WASAPI, inputs=2
-            ),
+            raw_endpoint(33, "Headphones (Astro A50 Game) [Loopback]", host_api=WASAPI, inputs=2),
         ]
     )
 
@@ -484,9 +478,7 @@ def test_the_render_device_reports_its_output_channel_count() -> None:
             raw_endpoint(
                 24, "Headphones (Astro A50 Game)", host_api=WASAPI, outputs=2, rate=44_100
             ),
-            raw_endpoint(
-                33, "Headphones (Astro A50 Game) [Loopback]", host_api=WASAPI, inputs=2
-            ),
+            raw_endpoint(33, "Headphones (Astro A50 Game) [Loopback]", host_api=WASAPI, inputs=2),
         ]
     )
 

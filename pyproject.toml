@@ -44,7 +44,10 @@ dev = [
     "pytest>=8",
     "pytest-cov>=5",
     "mypy>=1.10",
-    "ruff>=0.5",
+    # Pinned to a minor range, unlike the others. `ruff>=0.5` let CI resolve a newer ruff than any
+    # contributor had, and 0.16 promoting Markdown formatting out of preview turned CI red with no
+    # commit behind it. A linter whose rules change without a code change is not a gate.
+    "ruff>=0.16,<0.17",
 ]
 
 [tool.setuptools.packages.find]
@@ -63,7 +66,10 @@ filterwarnings = ["error::DeprecationWarning"]
 line-length = 100
 target-version = "py311"
 # Specs are prose; formatting their fenced code blocks creates diff churn.
-extend-exclude = ["docs"]
+# `.mex` is the same category and was missed when it was added on 2026-08-16: ruff 0.16 made
+# Markdown formatting non-experimental, so CI started reformatting the scaffold's fenced examples
+# — including the deliberately-wrong "# Wrong" ones, where a tidy blank line is noise.
+extend-exclude = ["docs", ".mex"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM"]
