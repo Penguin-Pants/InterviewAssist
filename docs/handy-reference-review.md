@@ -60,21 +60,51 @@ pre-Haswell CPU" (`Cargo.toml:101-110`).
 
 ## 3. Model acquisition — the most useful part, and it feeds OQ-11
 
-Handy does **not** depend on Hugging Face at runtime. Every catalog entry points at a host they
-control, `https://blob.handy.computer` (e.g. `model.rs:567`), declared as an allowed host in
-`src-tauri/src/catalog/catalog.json:5`. Hugging Face is a *fallback mirror* only, via a forked
-`hf-hub` (`Cargo.toml:113-115`).
+**Correction, 2026-09-09.** An earlier revision of this section said Handy does not depend on
+Hugging Face at runtime, and that every entry points at `blob.handy.computer`. That was wrong at
+current HEAD. Verified directly against the catalog rather than taken from a summary:
 
-Their downloader (`src-tauri/src/managers/model/download.rs`) is worth copying wholesale as a
-design:
+- **Hugging Face is the primary source, pinned to a commit.** Catalog entries carry an `id` that
+  is an HF repo (`handy-computer/parakeet-unified-en-0.6b-gguf`) plus a `revision` pinned to a
+  full git SHA. `ModelSource::HuggingFace { repo_id, revision }` (`managers/model.rs:44-58`)
+  fetches through a forked `hf-hub` into the shared HF cache, so other tools on the machine
+  reuse the same weights.
+- **Their own host is the mirror, not the origin.** `catalog.json`'s top-level
+  `"mirrors": ["https://blob.handy.computer"]`, consumed by
+  `catalog::mirror_fallbacks(model_id) -> Vec<MirrorFile>` (`catalog/mod.rs:143`). HF is tried
+  with 4 retries first, then the mirrors; the failure message is literally "Download failed from
+  Hugging Face (…) and N mirror(s)" (`model.rs:2110-2116`). `ModelSource::Url` still exists and
+  its doc comment calls it "current blob.handy.computer hosting", so both routes are live.
+- **A test enforces that the mirror is always usable:**
+  `every_catalog_model_has_mirror_fallbacks_with_hashes` (`catalog/mod.rs:253`).
+
+That is a better design than the one I first described, and the three properties are separable:
+**reproducibility** from the pinned HF revision, **integrity** from per-file SHA-256, and
+**availability** from a mirror they control. Note also that each catalog entry carries a
+`license` field, which is how they keep per-model weight licensing straight.
+
+The catalog itself needs no network: `include_str!("catalog.json")` compiles it into the binary,
+with the stated reason that "Handy ships a complete model list with zero network access"
+(`catalog/mod.rs:1-7`, `:118`). So the picker and its explanations render offline; only the
+weights need connectivity.
+
+Their downloader (`src-tauri/src/managers/model/download.rs`) is worth copying as a design:
 
 | Property | How | Line |
 |---|---|---|
-| Resumable | HTTP `Range: bytes=N-`, handling 206, 200-ignoring-range and 416 | `download.rs:224`, `:235-296` |
-| Integrity | SHA-256 pinned per model; **partial file deleted on mismatch** so the next attempt starts clean | `download.rs:52-56` |
+| Resumable | HTTP `Range: bytes=N-`, handling 206, 200-ignoring-range and 416 | `download.rs:186-215` |
+| Integrity | SHA-256 pinned **per quantisation file**, not per model; partial deleted on mismatch | `download.rs:64-72` |
+| Cheap re-check | a `.partial` already at the expected size is SHA-verified rather than re-downloaded | `download.rs:189-198` |
 | Never hangs | `DOWNLOAD_STALL_TIMEOUT = 60s`; no data for 60 s aborts, keeping the partial for resume | `download.rs:26` |
-| In-progress state | `.partial` suffix files under the app data dir | `model.rs:1391-1440` |
-| Escape hatch | verification skipped when `expected_sha256` is `None` (user's own custom models) | `download.rs:55` |
+| Cancel is non-destructive | cancelling flips a token and **keeps** the partial; only a hash mismatch deletes | `model.rs:2129`, `:2557-2589` |
+| Escape hatch | verification skipped when `sha256` is `None` (user's own custom models) | `download.rs:55` |
+| Failure is recoverable | a `DownloadCleanup` RAII guard resets `is_downloading`, the card reverts to "downloadable", and the user can retry indefinitely without restarting | `model.rs:505-517` |
+
+**One weakness worth not copying.** On a later launch, "is this model present and valid?" is a
+bare `model_path.exists()` (`model.rs:1439`). Content is SHA-verified only at the moment a
+download completes, so corruption *after* that point is never detected. For us the same shortcut
+would surface as an unexplained transcription failure mid-interview, which is the worst possible
+place to discover it. Verify on load, or at least record the verified hash and re-check cheaply.
 
 **A measured caution before we assume this solves our blocker.** It does not solve it *here*. I
 tested this container's proxy on 2026-09-09:
@@ -85,10 +115,26 @@ blob.handy.computer   CONNECT tunnel failed, 403
 api.anthropic.com     405   (i.e. reachable)
 ```
 
-The proxy is an allowlist, not a Hugging Face block. **Moving to a CDN we control would remove
-the Hugging Face dependency for shipped users, and would change nothing about local development
-or CI.** AS-9 stays blocked in this container either way. Keep testing against doubles here and
-verify on the Windows target machine, exactly as `06-progress.md` already prescribes.
+The proxy is an allowlist, not a Hugging Face block, so **adding a mirror we control changes
+nothing about local development or CI** — neither host is reachable from here. Its value is for
+shipped users, where it removes Hugging Face as a single point of failure. AS-9 stays blocked in
+this container either way. Keep testing against doubles here and verify on the Windows target
+machine, exactly as `06-progress.md` already prescribes.
+
+### The bundle/fetch split, confirmed
+
+This is the direct answer to OQ-11, and Handy splits it by size and by whether the user gets a
+choice:
+
+- **Bundled at build time:** `resources/models/silero_vad_v4.onnx`, 1.8 MB, git-tracked, shipped
+  via `tauri.conf.json:30` (`"resources": ["resources/**/*"]`) and loaded through
+  `BaseDirectory::Resource` (`managers/audio.rs:287-292`). Never downloaded at runtime.
+  `BUILD.md:121` treats it as a build prerequisite. The `curl` in `AGENTS.md:45-47` is a
+  developer bootstrap step, not an end-user path.
+- **Fetched at runtime:** all 69 STT catalog entries, always, into the models dir. No STT model
+  ships in the installer, and `default_settings.json` has no `selected_model`.
+
+Mandatory and small is bundled. Large and chosen is downloaded. That is the shape to copy.
 
 ### The cheaper half of OQ-11, already available to us
 

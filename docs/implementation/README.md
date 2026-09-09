@@ -18,7 +18,7 @@ restating them — so a change in one place propagates by reference, not by copy
 [safety review](../build-plan-safety-review.md) ·
 [PRISM design system](../prism-design-system.md) — governs every UI surface (D-17) ·
 [Handy reference review](../handy-reference-review.md) — a shipping local-only STT app, read for
-D-U12's local-first startup; feeds OQ-10 and OQ-11
+D-U12's local-first startup. Fed D-U13 (which resolved OQ-11); OQ-10 still open
 
 ## ID scheme
 
