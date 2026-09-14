@@ -2,8 +2,9 @@
 
 **Status:** Feature request. Not a build plan.
 **Date:** 2026-09-14
-**Revision:** 2. Revision 1 was reviewed against the codebase and had eleven confirmed errors.
-§11 records what changed and why, so the corrections are not silently absorbed.
+**Revision:** 3. Each revision was reviewed against the codebase rather than against the progress
+log. Revision 1 had eleven confirmed errors, revision 2 had ten. §11 and §12 record every one, so
+the corrections are not silently absorbed.
 **Extends:** `interviewpreprecallprd.md`. Reverses four of its guardrails, each named below with the
 decision that reverses it.
 **Reader:** anyone who has read `docs/implementation/06-progress.md`. If you have not, read §2 first.
@@ -129,7 +130,7 @@ FR1 to FR87 are taken. Numbering starts at FR90.
 | **FR93** | A **resume library** exists at app-root scope. Creating or editing a context set copies chosen resume chunks into that set (D-U25). The library is where you maintain your resume; the set is what an interview is matched and graded against. |
 | **FR94** | Every saved session is filed under exactly one company and one context set. The session list filters by company. Sessions that exist before the backfill move to a company named `Unfiled`. |
 | **FR95** | A session may carry meeting metadata entered beforehand: title, scheduled time, and named participants with optional role and LinkedIn URL. Participants are written into the context set as `INTERVIEWER` chunks, so they reach matching by the path that already exists. |
-| **FR111** | Switching company is an explicit operation with the same guarantees as FR43's set switch: **refused while a session is running**, and it rebuilds the embedding index, the prefilter target, the tracker and the session filter. A company's **most recently used context set** becomes active; if it has none, the switch creates an empty one rather than leaving no active set. |
+| **FR111** | Switching company is an explicit operation with the same guarantees as FR43's set switch: **refused while a session is running**. It rebuilds the four things `activate_context_set` rebuilds — the active `ContextSet`, `EmbeddingIndex.build()`, the prefilter's set reference, and the tracker's set reference plus its reset — and one new one, the session list's company filter (FR94). A company's **most recently used context set** becomes active; if it has none, the switch creates an empty one rather than leaving no active set. |
 
 ### 4.2 Ingestion
 
@@ -154,7 +155,7 @@ FR1 to FR87 are taken. Numbering starts at FR90.
 | ID | Requirement |
 |---|---|
 | **FR103** | The app maintains a **rolling conversation state**: topics covered, questions asked, points made, time elapsed. In-memory session state, updated on each finalised utterance from either stream. |
-| **FR112** | `ConversationState` is cleared by purge. It is added to `PurgeHooks` as a sixth hook, **ordered immediately before `drop_transcript`**, because it is derived from the transcript and must not outlive it. FR59's order is amended to name it. |
+| **FR112** | `ConversationState` is cleared by purge. It is added to `PurgeHooks` as a sixth hook, **ordered immediately before `drop_transcript`**, because it is derived from the transcript and must not outlive it. **FR59 needs no amendment**: it requires only that in-flight network work is neutralised before local state is cleared, and the new hook sits well after `cancel_network`. |
 | **FR104** | The app raises **next-best-action prompts** unprompted: a prepared point not yet used, a question worth asking back, a job-ad requirement not yet evidenced. Each cites its source chunk. Rate-limited, and never while the interviewer is speaking. |
 | **FR105** | The app raises **gap and risk alerts**: a job-ad requirement raised with no matching evidence, a statement contradicting a `RESUME` chunk, a single answer running long. Each cites the chunk or utterance that triggered it. An alert that cannot cite one is not shown (FR78 principle). Requires the mic stream (D-U23). |
 | **FR106** | The report gains a **fifth section covering the suggest lane**: what was suggested, what you used, what you ignored. Same evidence rule. Omitted, not faked, when the lane was off. |
@@ -221,19 +222,29 @@ untouched, so every `.npz` cache file stays valid. This is the difference betwee
 the schema bump: the schema bump would have had to rewrite every set file to move it under a
 container, and `path_for()` names each cache by note-set id.
 
-### 6.3 The session store needs its own backfill
+### 6.3 The session store needs its own backfill, and it is smaller than it looks
 
-`report/store.py` is a separate store the notes migration cannot reach. Sessions are
-`{session_id}.transcript` and `{session_id}.report`, with a single encrypted `sessions.index` at the
-root that `list_sessions()` globs. Adding a company key needs its own one-time pass:
+`report/store.py` is a separate store the notes migration cannot reach. It also does **not** work
+the way a first reading suggests. `_reindex` says so in as many words: the index is *"derived,
+encrypted, and never authoritative... Rebuilt from the files on every change rather than maintained
+incrementally, so it cannot drift into listing a session that no longer exists or hiding one that
+does."* `list_sessions()` reads the session files. The index exists for speed and for FR83.
 
-- The **index** gains a company id per entry. It is read, extended and re-written under the existing
-  cipher in one atomic write, the same shape as the note-set store's write path.
+So the backfill is one thing, not three:
+
+- **The company id goes in the session record**, which is the authoritative copy. `_reindex()` then
+  carries it into the index on the next write, for free.
+- **There is no index migration**, and none should be written. An index migration would be
+  maintaining incrementally exactly what the store refuses to maintain incrementally.
 - **Session files are not renamed.** Renaming an encrypted file to add a key buys nothing and risks
   orphaning a transcript that cannot be re-derived.
-- Entries with no company become `Unfiled`.
-- If the index cannot be decrypted, the backfill **stops and reports**, rather than rebuilding an
-  index by globbing, which would silently drop any session whose file is missing.
+- Records with no company become `Unfiled`.
+- **An unreadable session is skipped and recorded, not fatal.** This is the store's existing rule
+  and it is deliberate: one unreadable session must not hide the rest. A backfill that stopped on
+  first failure would invert it.
+
+**This backfill runs on Windows only.** `default_cipher()` raises anywhere else (D-40), so no
+session can be read or written off-platform. It is listed in §8 as such.
 
 ---
 
@@ -252,7 +263,7 @@ root that `list_sessions()` globs. Adding a company key needs its own one-time p
 | `app.py` | `activate_company` beside `activate_context_set` (FR111) | Must refuse mid-session, as FR43 already does for sets |
 | `platform/win_capture_exclusion.py` | Implement it (FR114) | Currently a docstring. A v1 requirement, unmet |
 | `platform/` | Protocol per capability (FR110) | Pure refactor. Tests should prove behaviour did not change |
-| `ui/` | Shell (FR107), wizard (FR108), company editor, suggest panel, proactive tray | Largest single block in v2 |
+| `ui/` | **`main_window.py` is rewritten into a workspace shell. Every other dialog is kept and embedded as a component** — `overlay.py`, `editor.py`, `report_view.py`, `settings.py`, `indicators.py`, `diagnostics_view.py`, `import_notes.py`, `restore.py`, `checklist.py`, `match_feed.py`. Plus the wizard (FR108), company editor, suggest panel and proactive tray | `ui/` is 5,741 of the app's 14,570 lines. Confining the rewrite to the one window that is currently a settings panel keeps the overlay's contrast sweeps, its geometry work and the PRISM tokens, and keeps their tests meaningful |
 | `__main__.py` | Finish `_build_application`. Real embedder. No-API-key policy | Blocks everything |
 
 ---
@@ -269,21 +280,60 @@ rough and are for ordering, not for planning.
 | **1. Make it run** | Composition root, no-API-key policy, wizard (FR108), embedder behind its Protocol | **Run the first-launch model download** (huggingface.co is blocked here, AS-9) | L |
 | **2. Windows reality** | Latency harness, device-enumeration code, D-68 keep-alive wiring | **Run M1 on your Windows 11 machine with a real audio device.** Nothing downstream is trustworthy until this passes | M + hardware |
 | **3. Capture exclusion** | `SetWindowDisplayAffinity` via ctypes (FR114, FR14, FR14a) | **Verify on a real screen share.** Headless cannot test this | S + hardware |
+| **3b. UI shell decision** | — | Already taken: new shell, existing dialogs kept as components (§7) | — |
 | **4. Company store** | New store, FR90 to FR92, FR111, §6.2 backfill | — | L |
-| **5. Session filing** | FR94, FR95, §6.3 index backfill | — | M |
+| **5. Session filing** | FR94, FR95, §6.3 record backfill | **Run the backfill.** Windows-only: `default_cipher()` raises elsewhere (D-40) | M + hardware |
 | **6. Resume library** | FR93, copy-into-set, library editor | — | M |
 | **7. Ingestion** | PDF and DOCX, FR96 to FR98 | Supply real resumes and job ads as fixtures | M |
 | **8. App shell** | Workspace UI (FR107), company editor, PRISM applied | Judge it at a glance, as with FR72's 1 m test | L |
 | **9. Separation wall** | Generalise `separation.py`, add FR113's assertions, with tests first | — | S |
 | **10. Conversation state** | FR103, FR112 sixth purge hook, FR59 amended | — | M |
 | **11. Suggest lane** | `suggest/`, `ui/suggest_panel.py`, FR99 to FR102 | **Approve FR101's disclosure wording.** An ethics decision, not copy | L |
+| | *Depends on PR 3 (FR114) **and** PR 2: OQ-12 and §9 both need PR 2's latency numbers before this lane's budget can be set* | | |
 | **12. Proactive** | `proactive/`, FR104, FR105, D-U23 mic routing, rate limits | Judge whether the alerts help or intrude, live | L |
 | **13. Report extension** | FR106 | **An Anthropic key.** T4.7 has never run against one | S |
-| **14. Platform seam** | FR110 Protocols | — | M |
-| **15. Packaging** | PyInstaller build, installer script | **Buy a code-signing certificate.** Needs a legal identity and money | M + purchase |
+| **14. Platform seam** | FR110 Protocols | — | **L, and growing** |
+| **15. Packaging** | PyInstaller build, installer script, **re-run PR 1's first-run download against the packaged build** | **Buy a code-signing certificate.** Needs a legal identity and money | M + purchase |
 
-**PRs 4 to 10 do not depend on PR 2.** They are pure data-model and UI work and can proceed while
-the hardware gate is open. **PRs 11 and 12 depend on PR 3**, by FR114.
+### What the hardware gate actually blocks
+
+The gate is **not** only PRs 1 and 2. Four pull requests need your Windows machine:
+
+| PR | Why |
+|---|---|
+| 1 | First-run model download. huggingface.co is blocked in the dev container (AS-9) |
+| 2 | M1 audio capture on a real device |
+| 3 | Screen-capture exclusion, verified on a real screen share |
+| 5 | The session backfill. `default_cipher()` raises off Windows (D-40) |
+
+And PR 3 is not a leaf: **FR114 makes PRs 11 and 12 wait on it**, so the gate reaches the headline
+feature. PR 11 additionally needs PR 2's latency numbers, per OQ-12 and §9.
+
+**PRs 4, 6, 7, 8, 9 and 10 are clear of the gate.** They are data-model, ingestion and UI work and
+can proceed in full while you are away from the machine. That is six of fifteen, which is what makes
+the split worth stating rather than waving at.
+
+### Why PR 14 is larger than it reads
+
+PR 14 is described in §7 as a pure refactor. It is not, because it runs last:
+
+- PR 2 adds WASAPI device enumeration
+- PR 3 adds `SetWindowDisplayAffinity` through `ctypes`
+- PR 15 adds PyInstaller path handling
+
+Each lands as direct Windows code and each then has to be pulled behind a Protocol by PR 14. The
+seam gets bigger the later it runs. It stays late because D-U15 only requires it before macOS, and
+moving it earlier would mean designing Protocols around code that does not exist yet. **The cost is
+accepted, not overlooked**, and the size is marked L rather than M to say so.
+
+### PyInstaller changes the write profile
+
+`04-test-strategy.md` is explicit: *"Run against the packaged build, not just the dev build —
+PyInstaller changes the write profile."* The design doc's allowlist puts the model caches outside
+the app root, at `%USERPROFILE%\.cache\huggingface` and `%LOCALAPPDATA%\torch`, plus PyInstaller's
+own `_MEI*` temp directory. **PR 1's first-run download is therefore not finished until PR 15
+re-runs it against the packaged build.** That is the one backward dependency in this sequence, and
+it is named rather than discovered.
 
 ---
 
@@ -309,7 +359,7 @@ the hardware gate is open. **PRs 11 and 12 depend on PR 3**, by FR114.
 |---|---|---|---|
 | **OQ-12** | Which model serves the suggest lane? The selector's Haiku is tuned for a one-token enum, not for drafting | Needs PR 2's latency numbers | PR 11 |
 | **OQ-13** | Does the suggest lane need its own confidence floor, or does it inherit the prefilter's τ? | Design | PR 11 |
-| **OQ-14** | Is the resume library one document or many? | You | PR 6 |
+| **OQ-14** | Is the resume library one document or many? | You | PR 6 **and PR 7** — the answer decides whether the importer handles one resume or a set of them |
 | **OQ-15** | How do a proactive alert and a recall snippet share the overlay when both fire? | Design | PR 12 |
 | **OQ-16** | What signs the installer, and at what cost? | You | PR 15 |
 | **OQ-17** | What exactly does FR101's acknowledgement say? | You | PR 11 |
@@ -345,3 +395,38 @@ second pass:
 - *"The backfill invalidates every embedding cache."* Moot once the company is a separate store:
   nothing in `notesets/` or `index/` is rewritten.
 - *"FR105 is unimplementable."* Overstated. It needed D-10 amended, not a redesign.
+
+---
+
+## 12. What changed in revision 3
+
+A second review round, against the fixes themselves rather than against revision 1. Ten confirmed.
+
+| # | Error in revision 2 | Fix |
+|---|---|---|
+| 1 | §6.3 proposed migrating the encrypted session index | `report/store.py:345` states the index is *"derived, encrypted, and never authoritative... rebuilt from the files on every change"*. The company id goes in the session **record**; `_reindex()` carries it. §6.3 rewritten, and it is now the smallest of the three backfills rather than the largest |
+| 2 | §6.3 said the backfill stops if the index cannot be decrypted | That inverts the store's deliberate rule, which is that one unreadable session must not hide the rest. Skip and record, as `list_sessions` already does |
+| 3 | The session backfill was not marked as needing Windows | `default_cipher()` raises off Windows (D-40). Named in §6.3 and in §8's gate table |
+| 4 | FR112 said FR59's order is amended | FR59 requires only network-first. No amendment needed, and claiming one would have sent someone editing a requirement for no reason |
+| 5 | FR111 said "rebuilds what `activate_context_set` rebuilds" | Now names the four, plus the one new thing a company switch adds |
+| 6 | §8 said the hardware gate is PRs 1 and 2 | It is PRs 1, 2, 3 and 5, and FR114 makes PR 3 block the suggest lane. New gate table says which six PRs are genuinely clear of it |
+| 7 | §8 gave PR 11 only a PR 3 dependency | §9 and OQ-12 both require PR 2's latency numbers first. Stated in the table |
+| 8 | PR 14 was called a pure refactor, sized M | PRs 2, 3 and 15 each add direct Windows code that PR 14 must then abstract. Re-sized L, with the reason for keeping it late written down |
+| 9 | PR 1's first-run download was treated as finishable in PR 1 | `04-test-strategy.md` says PyInstaller changes the write profile, and the model caches sit outside the app root. PR 15 re-runs it. The one backward dependency, now named |
+| 10 | OQ-14 blocked only PR 6 | It blocks PR 7 too: the answer decides whether the importer handles one resume or many |
+
+Four review findings were **dropped** rather than fixed:
+
+- *"mypy reports 45 errors in 17 files."* False. `python -m mypy interview_prep_recall` returns
+  *"Success: no issues found in 62 source files"*, and `ruff check` returns *"All checks passed!"*.
+  The reviewer referred to PyQt5; the project uses PySide6 6.11.2.
+- *"`audio/` and `platform/` should be discarded as Windows-only."* Windows is the target (D-U15).
+  Windows-specific is the requirement, not a defect.
+- *"`notes/`, `ui/`, `report/` and `matching/` need major redesign because they cite the guardrail."*
+  Most citations are comments. D-U14 leaves the recall lane unchanged and D-U24 leaves `ContextSet`
+  unchanged, so the work is additive.
+- *"D-U25, D-U26 and FR112 are not implemented in the code."* They are requirements in a feature
+  request. Reporting that a requirement is unbuilt is not a finding.
+
+Line counts in this document are measured, not estimated: **14,570** lines under
+`interview_prep_recall/`, **15,206** under `tests/`, across 35 test files.
