@@ -16,7 +16,7 @@ edges:
     condition: when starting a task — check the pattern index for a matching pattern file
   - target: AGENTS.md
     condition: for project identity, non-negotiables, and commands (read at session start)
-last_updated: 2026-09-09
+last_updated: 2026-09-14
 ---
 
 # Session Bootstrap
@@ -27,7 +27,7 @@ Then read this file fully before doing anything else in this session.
 
 ## Current Project State
 
-**Re-verified 2026-09-09 after a ~3.5 week pause. `docs/implementation/06-progress.md` is the
+**Re-verified 2026-09-14 (T9.6a landed). `docs/implementation/06-progress.md` is the
 authoritative build log — read it before trusting this summary. It tracks its own past staleness
 ("wrong seven times") with a standing rule: test the reason a task looks blocked, not the label.**
 
@@ -38,26 +38,26 @@ authoritative build log — read it before trusting this summary. It tracks its 
   diagnostics ring buffer. All wired together through `app.py`'s composition root and
   `ui/main_window.py`.
 - Local Whisper STT backend and both cloud STT backends (Deepgram, ElevenLabs) plus an
-  auto-fallback wrapper — implemented and unit-tested in isolation, but see the top blocker below.
-- Test suite: 1231/1231 passing on Linux (offscreen Qt), mypy `--strict` clean on
-  `stt/interface.py`, ruff clean.
+  auto-fallback wrapper — implemented and unit-tested in isolation, but nothing constructs one yet:
+  the composition root takes no STT backend, because there is no capture to feed it (M1).
+- Test suite: 1247/1247 passing on Linux (offscreen Qt), mypy `--strict` clean on
+  `stt/interface.py`, ruff clean. The Qt tests need `libEGL.so.1` present — without it 12 files
+  fail to *collect* and the suite looks like 560 tests, which reads as a code problem and is not.
 
-**Top blocker — the app cannot run end-to-end yet:**
-- `interview_prep_recall/__main__.py`'s `_build_application()` unconditionally
-  `raise NotImplementedError` (task T9.6a). No audio capture and no STT backend, local or cloud,
-  is ever constructed or wired into `Application`.
-- **The no-API-key policy that blocked it is now decided: D-U12 (2026-09-09) — local at startup,
-  cloud keys optional.** `Application` requires `client: MessagesClient` with no default today, so
-  making it optional and `Stage2Selector` conditional is new code in `app.py`. The degraded path
-  itself needs none: `MatchingPipeline` already accepts `selector=None`.
-- **What actually blocks T9.6a now is the embedder, and it is bigger than a model download: no
-  concrete `Embedder` implementation has ever been written**, only the Protocol in
-  `notes/index.py`. Until one exists, `Prefilter.candidates()` returns nothing and the overlay
-  matches nothing, model or no model. See OQ-11.
-- DPAPI stays Windows-only, but it does not block a local dev run.
-- Consequence: embedding-based note matching **is** fully wired into the UI (this reverses what
-  this file used to say) — it simply never receives an utterance to match, because nothing feeds
-  it one yet.
+**The app starts (T9.6a, 2026-09-14) — and still cannot hold an interview:**
+- `interview_prep_recall/__main__.py`'s `_build_application()` no longer raises. It constructs the
+  embedder, the model client, the cipher and the active note set; `python -m interview_prep_recall`
+  opens the window, runs FR63's gate and reports preflight.
+- `notes/embedder.py` is **the first concrete `Embedder` this codebase has had** — the Protocol in
+  `notes/index.py` had gone nine milestones with only test fakes behind it, which is why
+  `Prefilter.candidates()` returned nothing regardless of any model.
+- **What still stops a session:** no audio capture (M1) and no overlay (M5), so nothing ever feeds
+  an utterance in. Preflight says so — every check except `model_present` reports "no probe
+  registered", which is the honest answer while there is no device to ask.
+- **Three dependencies degrade instead of refusing**, each named on the ring or in preflight: no
+  embedding weights → empty index and `model_present` BLOCKs the session (AS-10); no API key →
+  `selector=None`, stage 1 only (D-U12); no user-bound cipher off Windows → `UnavailableCipher`,
+  which refuses at the write so FR82 is kept by writing nothing.
 
 **Not yet built:**
 - Four modules are pure stubs with no logic: `watchdog.py`, `audio/echo.py` (FR57, audio-domain
@@ -77,10 +77,11 @@ authoritative build log — read it before trusting this summary. It tracks its 
   `ANTHROPIC_API_KEY`.
 - **AS-8**: Deepgram/ElevenLabs wire protocols are implemented from documentation only, never
   verified against a live endpoint.
-- **AS-9**: the local Whisper adapter has never loaded a real model — this dev container blocks
-  `huggingface.co` — so it is untested against the real library.
+- **AS-9 / AS-10**: neither local model has ever been loaded — this dev container blocks
+  `huggingface.co` — so the Whisper adapter and the `SentenceTransformerEmbedder` are both
+  untested against their real libraries.
 - Environment split: this dev container is Linux; the product targets Windows 11. The full test
-  suite (1231 tests) passes here via PySide6's offscreen Qt platform. Windows-only code
+  suite (1247 tests) passes here via PySide6's offscreen Qt platform. Windows-only code
   (DPAPI, WASAPI, `SetWindowDisplayAffinity`, WER suppression) needs the Windows target machine,
   which became reachable for the first time on 2026-08-16 (see the M1 log entry).
 

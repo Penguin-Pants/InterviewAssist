@@ -40,6 +40,7 @@ from interview_prep_recall.first_run import (
 from interview_prep_recall.matching.pipeline import MatchingPipeline, MatchResult
 from interview_prep_recall.matching.prefilter import Prefilter
 from interview_prep_recall.matching.selector import Stage2Selector
+from interview_prep_recall.notes.embedder import EmbedderUnavailableError
 from interview_prep_recall.notes.index import Embedder, EmbeddingIndex
 from interview_prep_recall.notes.model import ContextSet
 from interview_prep_recall.report.consent import ReportConsent
@@ -169,7 +170,15 @@ class Application:
 
     root: Path
     embedder: Embedder
-    client: MessagesClient
+    client: MessagesClient | None
+    """`None` for a keyless run (D-U12) — a supported configuration, not an error.
+
+    Capture, transcription, matching and tracking all work without an account. What a
+    missing key costs is the stage-2 selector, where `MatchingPipeline` already accepts
+    `selector=None` and degrades to the stage-1 embedding prefilter, and the report, which
+    has no local generation path at all and refuses with a reason (OQ-10).
+    """
+
     cipher: Cipher
     context_set: ContextSet
     on_context_set_change: Callable[[ContextSet], None] = field(init=False, repr=False)
@@ -254,7 +263,7 @@ class Application:
         self.egress = EgressMonitor(self.monitor)
 
         self.index = EmbeddingIndex(self.root, self.embedder)
-        self.index.build(self.context_set)
+        self._reindex()
         self.prefilter = Prefilter(
             self.index, self.context_set, self.embedder, tau_floor=self.config.tau_floor
         )
@@ -267,7 +276,14 @@ class Application:
         self.runner = BackgroundCallRunner()
         self.pipeline = MatchingPipeline(
             prefilter=self.prefilter,
-            selector=Stage2Selector(self.client, model_id=self.config.llm_model_id),
+            # D-U12: no key, no stage 2. Built here rather than defaulted inside the
+            # pipeline so there is one place that decides what a keyless run is, and the
+            # indicator the user reads comes from the same decision.
+            selector=(
+                None
+                if self.client is None
+                else Stage2Selector(self.client, model_id=self.config.llm_model_id)
+            ),
             # **Delegated, not copied.** `on_result=self.on_result` captured whatever the
             # field held at construction — the no-op default — so a UI assigning
             # `application.on_result` afterwards changed nothing the pipeline calls, and
@@ -444,7 +460,7 @@ class Application:
                 "the tracker and the report all read the set that was active at the start."
             )
         self.context_set = context_set
-        self.index.build(context_set)
+        self._reindex()
         self.prefilter.note_set = context_set
         # **The tracker holds its own reference too**, and `reset()` only clears session
         # state. Left pointed at the previous set it would render the old checklist and
@@ -471,8 +487,26 @@ class Application:
         application's, and a UI reaching into it would be a second owner of the cache
         FR34 makes guarantees about. Found by review on PR #27.
         """
-        self.index.build(self.context_set)
+        self._reindex()
         self.ring.record("notes_reindexed", count=len(self.context_set.notes))
+
+    def _reindex(self) -> None:
+        """Embed the active set. **An unavailable model leaves the index empty, loudly.**
+
+        Every other path through this codebase treats a missing dependency as a reason to
+        refuse, and this one deliberately does not, because the refusal is already owned by
+        somebody else: preflight's `model_present` check blocks the *session* (T9.6a), which
+        is the thing that must not start. Propagating here would instead take down the
+        window the user needs in order to fix it — the app would refuse to open because the
+        thing it opens to let you download is not downloaded.
+
+        `Prefilter.candidates` returns `[]` on an empty index, so matching is silent rather
+        than wrong. The ring is what separates that silence from "nothing matched" (D-60).
+        """
+        try:
+            self.index.build(self.context_set)
+        except EmbedderUnavailableError:
+            self.ring.record("embedder_unavailable", reason="reindex")
 
     def _context_set_unwired(self, context_set: ContextSet) -> None:
         """D-60's loud default for `on_context_set_change`.

@@ -41,6 +41,16 @@ CHECKS: tuple[Check, ...] = (
     Check("loopback_device", "System audio (interviewer)", CheckClass.BLOCK),
     Check("mic_device", "Microphone (you)", CheckClass.BLOCK),
     Check("notes_loaded", "Notes loaded", CheckClass.BLOCK),
+    # D-U13 makes the models a first-run download, so "installed but never set up" is a
+    # state a real user reaches — and one where every part of the app works except the
+    # part they started it for. Blocking is the point: without the embedding model
+    # `Prefilter` returns no candidates, which on screen is indistinguishable from an
+    # interview where nothing they prepared came up.
+    #
+    # The label names the matching model alone because that is what this build
+    # constructs (T9.6a). The Whisper model joins this check when M1 builds an STT
+    # backend; the key is deliberately generic so it does not have to be renamed then.
+    Check("model_present", "Matching model", CheckClass.BLOCK),
     Check("windows_build", "Windows build", CheckClass.BLOCK),
     # Warn, not block: blocking would permanently strand a user whose machine always
     # fails this, with no remedy available to them. FR14a's persistent warning is the

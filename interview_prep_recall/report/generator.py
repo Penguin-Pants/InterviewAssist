@@ -213,7 +213,17 @@ class Report:
 
 @dataclass
 class ReportGenerator:
-    client: MessagesClient
+    client: MessagesClient | None
+    """`None` for a keyless run (D-U12). Generation then refuses with a reason.
+
+    **OQ-10, answered as the smallest thing that is true**: the report is the one
+    explicitly cloud-gated feature, because it is the only one with no local path — FR80
+    already says so for the FR37 switch, and a missing key puts the generator in exactly
+    that state. What this deliberately does *not* do is invent a local evidence-only
+    report from the tracker's covered/missed sets; that remains open, and nothing here
+    forecloses it.
+    """
+
     consent: ReportConsent
     """FR85, enforced here and **required**, not optional.
 
@@ -289,6 +299,10 @@ class ReportGenerator:
                 "Report generation needs the cloud model and is unavailable in "
                 "local-only mode. Nothing was sent."
             )
+        # After local-only, not before: a user who switched cloud matching off chose
+        # this, and telling them to add a key instead would answer a question they did
+        # not ask. A missing key only matters once they have asked for the cloud.
+        self._require_client()
         if len(record) == 0:
             raise ReportUnavailableError("Nothing was recorded in this session.")
 
@@ -304,6 +318,21 @@ class ReportGenerator:
         """FR81's refusal, recorded. Nothing is sent and nothing is stored."""
         self.ring.record("report_declined", count=len(prepared.record))
 
+    def _require_client(self) -> MessagesClient:
+        """The keyless refusal, in one place. Checked in `prepare` **and** in `send`.
+
+        `prepare` is where the user finds out, early and before a confirmation is asked
+        about a payload that cannot be sent. `send` is a public entry point a UI thread
+        reaches with a `PreparedReport` it was handed, so the check has to hold there too
+        rather than rely on the order two callers happened to use.
+        """
+        if self.client is None:
+            raise ReportUnavailableError(
+                "The post-interview report needs an Anthropic API key, and there is no "
+                "local path for it. Add a key in Settings. Nothing was sent."
+            )
+        return self.client
+
     def send(self, prepared: PreparedReport) -> Report:
         """The network half. **Safe to call from a worker thread, and meant to be.**
 
@@ -313,6 +342,7 @@ class ReportGenerator:
         makes FR81a *visible*: an indicator set on a blocked event loop is lit in memory
         and dark on screen for the whole upload it is supposed to announce.
         """
+        client = self._require_client()
         record = prepared.record
         prompt = prepared.prompt
         context_set = prepared.context_set
@@ -323,7 +353,7 @@ class ReportGenerator:
         # leave the indicator claiming an upload that already failed (FR81a).
         self.egress.set_llm(True)
         try:
-            response = self.client.create(
+            response = client.create(
                 model=self.model_id,
                 max_tokens=MAX_TOKENS,
                 temperature=0,

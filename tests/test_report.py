@@ -45,6 +45,7 @@ from interview_prep_recall.report.separation import (
 from interview_prep_recall.report.store import (
     CipherUnavailableError,
     SessionStore,
+    UnavailableCipher,
     default_cipher,
 )
 from interview_prep_recall.session.health import Egress
@@ -281,6 +282,47 @@ def _consent(tmp: Path) -> ReportConsent:
 
 def _context_set(kinds: list[SourceKind]) -> ContextSet:
     return ContextSet(name="Acme", notes=[Note(headline=f"{k.value} chunk", kind=k) for k in kinds])
+
+
+def test_a_keyless_generator_refuses_and_says_which_key(app_data) -> None:  # type: ignore[no-untyped-def]
+    """D-U12 / OQ-10. No key is a configuration, so the report states its one condition.
+
+    Deliberately the same shape as `local_only` above: both are "there is no local path
+    for this", and a user who is told one of them in different words would reasonably
+    conclude they are different problems.
+    """
+    generator = ReportGenerator(consent=_consent(app_data), client=None)
+
+    with pytest.raises(ReportUnavailableError, match="API key"):
+        generator.prepare(
+            _record_with(2), _context_set([SourceKind.PREP]), missed_note_ids=frozenset()
+        )
+
+
+def test_a_keyless_generator_refuses_at_send_too(app_data) -> None:  # type: ignore[no-untyped-def]
+    """`send` is public and reachable with a payload built while a key still existed."""
+    prepared = ReportGenerator(consent=_consent(app_data), client=ScriptedClient()).prepare(
+        _record_with(2), _context_set([SourceKind.PREP]), missed_note_ids=frozenset()
+    )
+    keyless = ReportGenerator(consent=_consent(app_data), client=None)
+
+    with pytest.raises(ReportUnavailableError, match="API key"):
+        keyless.send(prepared)
+
+
+def test_an_unavailable_cipher_refuses_the_write_not_the_construction(app_data) -> None:  # type: ignore[no-untyped-def]
+    """T9.6a. FR82 is kept by writing nothing, not by refusing to exist.
+
+    The entry point has to build a `SessionStore` on a platform that may have no
+    user-bound key, and failing there would take down the notes editor and the settings
+    surface with it — neither of which touches a transcript.
+    """
+    store = SessionStore(app_data, cipher=UnavailableCipher("no cipher here"))
+
+    assert store.list_sessions() == [], "listing needs no key and must still work"
+    with pytest.raises(CipherUnavailableError, match="no cipher here"):
+        store.save(_record_with(1), role="Engineer")
+    assert not list((app_data / "sessions").glob("*.transcript"))
 
 
 def test_local_only_refuses_and_sends_nothing(app_data) -> None:  # type: ignore[no-untyped-def]

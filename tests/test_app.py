@@ -19,6 +19,7 @@ from interview_prep_recall.app import (
     CloudSwitchFanout,
     ReportLocalOnlyAdapter,
 )
+from interview_prep_recall.notes.embedder import EmbedderUnavailableError
 from interview_prep_recall.notes.model import ContextSet, Note, SourceKind
 from interview_prep_recall.report.evidence import ReportSection
 from interview_prep_recall.report.generator import (
@@ -36,6 +37,16 @@ class FlatEmbedder:
 
     def encode(self, texts: list[str]) -> np.ndarray:
         return np.ones((len(texts), 2), dtype=np.float32)
+
+
+class MissingModel:
+    """An embedder whose model is not on this machine — D-U13's first-run state."""
+
+    model_id = "absent/one"
+    model_version = "0"
+
+    def encode(self, texts: list[str]) -> np.ndarray:
+        raise EmbedderUnavailableError("no model on this machine")
 
 
 def _context() -> ContextSet:
@@ -774,3 +785,76 @@ def test_a_report_for_a_deleted_session_is_not_stored(app_data) -> None:  # type
         app.send_report(session_id, prepared)
 
     assert not app.sessions.report_path(session_id).exists()
+
+
+def test_a_keyless_application_keeps_stage_one_and_drops_stage_two(app_data) -> None:  # type: ignore[no-untyped-def]
+    """D-U12 (T9.6a). A missing key is a configuration, and the wiring has to express it.
+
+    The degraded path already existed — `MatchingPipeline` has accepted `selector=None`
+    since M4 — and nothing selected it, because `client` was required. This is the
+    connection, which is what this suite is for.
+    """
+    app = Application(
+        root=app_data,
+        embedder=FlatEmbedder(),
+        client=None,
+        cipher=ReversingCipher(),
+        context_set=_context(),
+    )
+
+    assert app.pipeline.selector is None
+    assert app.pipeline.local_only, "the indicator must agree with the wiring (D-23)"
+    assert app.prefilter.candidates("Tell me about a migration"), "stage 1 still matches"
+
+
+def test_a_keyless_application_still_switches_every_cloud_consumer(app_data) -> None:  # type: ignore[no-untyped-def]
+    """The FR37 fan-out asserts it has consumers. A keyless run must not empty it, or
+    flipping the switch raises instead of lighting the local-only indicator (D-23)."""
+    app = Application(
+        root=app_data,
+        embedder=FlatEmbedder(),
+        client=None,
+        cipher=ReversingCipher(),
+        context_set=_context(),
+    )
+
+    app.switches.set_local_only(True)
+
+    assert app.reports.local_only is True
+
+
+def test_an_unavailable_model_leaves_an_empty_index_and_says_so(app_data) -> None:  # type: ignore[no-untyped-def]
+    """T9.6a. D-U13 makes the weights a first-run download, so this is a real user state.
+
+    Refusing to construct would take down the window the user fixes it from. Refusing
+    *silently* would be the six-milestone defect D-60 records: no candidates and no
+    candidates look identical on screen.
+    """
+    app = Application(
+        root=app_data,
+        embedder=MissingModel(),
+        client=ScriptedClient(),
+        cipher=ReversingCipher(),
+        context_set=_context(),
+    )
+
+    assert app.index.vectors.shape[0] == 0
+    assert app.prefilter.candidates("Tell me about a migration") == []
+    assert any(e.event == "embedder_unavailable" for e in app.ring.snapshot())
+
+
+def test_an_unavailable_model_does_not_break_saving_notes(app_data) -> None:  # type: ignore[no-untyped-def]
+    """`notes_changed` re-embeds on every save (T3.7). Editing notes is exactly what a
+    user does while waiting to fix the model, so it must not raise at them."""
+    app = Application(
+        root=app_data,
+        embedder=MissingModel(),
+        client=ScriptedClient(),
+        cipher=ReversingCipher(),
+        context_set=_context(),
+    )
+
+    app.notes_changed()
+    app.activate_context_set(_context())
+
+    assert app.index.vectors.shape[0] == 0

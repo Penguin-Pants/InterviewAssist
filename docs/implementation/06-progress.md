@@ -21,19 +21,20 @@ Updated at the end of every milestone. Newest entry at the top of the log.
 | **M6 — Session lifecycle** | 🟢 Logic complete · panic on hold (D-U11) | T6.1–T6.3, **T6.3b's panic surface**, T6.5 classification, T6.6 backpressure, T6.7 done. T6.4 and the OS trigger paths need Windows |
 | **M7 — Progress tracker** | 🟢 Everything buildable here is done | T7.1, T7.3 and **T7.4** complete. T7.2 needs paired audio fixtures — the only M7 task left |
 | **M8 — Cloud STT backends** | 🟢 T8.1–T8.5 complete | Deepgram, ElevenLabs, fallback, egress. Protocols unverified against a live endpoint (**AS-8**) |
-| **M9 — Packaging & first run** | 🟡 T9.0–T9.2, T9.6 complete · *blockers in the register* | Composition root, FR63 disclosure, config store, settings surface, **entry point**. T9.3 is **blocked on M1** (three of four steps are audio). **T9.6a no longer needs FR43** — T3.8 answered it and `editor.load_active_set` is the reader; the no-API-key policy is **resolved by D-U12** (2026-09-09, local at startup and cloud keys optional), so it is down to the embedder — and that is not just the model download (`sentence-transformers` is in the platform-neutral `embeddings` extra, blocked **here** by network policy, same as AS-9, not by platform) but the fact that **no concrete `Embedder` implementation has ever been written**, only the Protocol. DPAPI stays Windows-only. T9.4 is PyInstaller; T9.5 needs live vendor docs |
+| **M9 — Packaging & first run** | 🟢 T9.0–T9.2, **T9.6 and T9.6a** complete · *blockers in the register* | Composition root, FR63 disclosure, config store, settings surface, entry point, **and real dependency construction (2026-09-14) — the app starts**. `notes/embedder.py` is the first concrete `Embedder` in this codebase; the weights have still never been downloaded here (**AS-10**). T9.3 is **blocked on M1** (three of four steps are audio) and owns the download itself. T9.4 is PyInstaller; T9.5 needs live vendor docs |
 | **M10 — Typed context sources** | 🟢 T10.1–T10.7 complete | Five kinds, per-kind caps and thresholds, schema v1→v2 migration, **FR72's per-kind marking**. T10.7's 1 m glance test and bundled-font glyph coverage ride with T5.9/T9.4 |
 | **M11 — Post-interview report** | 🟢 T11.1, T11.3–T11.10 + a/b/c complete | Record, evidence binding, encrypted store, retention, generation, the view/export, **context snapshots (D-58) and off-thread generation (D-59)**. Only T11.2's DPAPI cipher needs Windows |
 
-**Next action: nothing this container can build.** T10.7b landed on 2026-08-16 and was the last
-of them. What remains is the Windows machine, the user's labelled fixtures, a vendor key, or the
-real-surface session that owes judgements on T5.9, FR72's 1 m glance test and T7.4a's readability.
+**Next action: the Windows machine, the user's labelled fixtures, or a vendor key.** Everything
+else is external: T5.9, FR72's 1 m glance test and T7.4a's readability owe a real-surface session.
 
-**That sentence has been wrong seven times.** It is written here as a claim to re-test, not a
-fact — the check that has caught every previous instance is to try a "blocked" task for four
-minutes before believing its label. **The Blocked register below is the single list**, every
-reason re-tested on 2026-08-16, each with the check that would falsify it. Test the reason, not
-the milestone.
+**That sentence has now been wrong eight times, most recently on T9.6a**, which sat in the
+register with "Writing a concrete `Embedder`" in its own falsify-it column — a blocker whose
+falsification is *do the task* was never a blocker, and it had stopped being one on 2026-09-09
+when D-U12 and D-U13 answered the last two decisions in front of it. It is written here as a
+claim to re-test, not a fact; the check that has caught every previous instance is to try a
+"blocked" task for four minutes before believing its label. **The Blocked register below is the
+single list**, each row with the check that would falsify it. Test the reason, not the milestone.
 
 *(T7.4a was measured on 2026-08-16. Its code half turned out to be a test that asserted nothing;
 its remaining half is a real-surface judgement riding with T5.9.)*
@@ -161,7 +162,7 @@ with more force than ever: **test the reason, not the label.**
 | Item | Reason | Falsify it by |
 |---|---|---|
 | **AS-9 / T2.2's model adapter** | `faster-whisper` installs; the **model weights** come from `huggingface.co`, and the proxy answers `403 CONNECT tunnel failed`. The backend's VAD, finalisation, timestamps and threading are all tested behind a `Transcriber` Protocol. | `curl https://huggingface.co/...` returning 200 |
-| **T9.6a's embedder** | Same 403. `sentence-transformers` is in the platform-neutral `embeddings` extra and installs here — **this is not a Windows dependency**, and calling it one was a real error corrected on PR #29. | The same curl |
+| **AS-10 / T9.6a's embedder weights** | Same 403. The adapter is **written** as of 2026-09-14 and has never encoded anything: `sentence-transformers` is in the platform-neutral `embeddings` extra and installs here — **this is not a Windows dependency**, and calling it one was a real error corrected on PR #29 — but `all-MiniLM-L6-v2`'s weights come from `huggingface.co`. `model_present` reports this rather than letting a session start against an empty index. | The same curl |
 | **AS-8 / T8.1, T8.2** — live protocol check | `api.deepgram.com` and `api.elevenlabs.io` both fail to connect (curl `000`), **and** no vendor key is set. Two independent blockers. | Either endpoint answering |
 | **T9.5** — live Haiku pricing | Needs vendor documentation this container cannot reach | — |
 
@@ -170,7 +171,7 @@ with more force than ever: **test the reason, not the label.**
 | Item | Reason | Falsify it by |
 |---|---|---|
 | **T4.7 — the OQ-1 gate** | Needs the user's **hand-labelled fixtures**, which nothing in the code substitutes. **`api.anthropic.com` is reachable** (405 to a GET, i.e. the endpoint answers) — so egress is *not* the blocker; the missing pieces are the fixtures and `ANTHROPIC_API_KEY`, which is absent from the environment. | Fixtures arriving, plus a key |
-| **T9.6a — real dependency construction** | Down to **one** blocker. FR43 is not one: T3.8 answered it and `editor.load_active_set` is the reader. The **no-API-key policy** is not one either — **D-U12 decided it on 2026-09-09**: local at startup, cloud keys optional. What remains is the embedder, and it is larger than the download: **no concrete `Embedder` exists**, only the Protocol, so `Prefilter.candidates()` returns `[]` regardless of the model. DPAPI stays Windows-only but does not block a local dev run. **D-U13 answered OQ-11 on 2026-09-09**: first run downloads the models, the user picks the Whisper model, the embedder is fixed, the VAD is bundled. Nothing is waiting on a decision now. | Writing a concrete `Embedder` |
+| ~~**T9.6a — real dependency construction**~~ | ✅ **Done 2026-09-14**, and it was never blocked on a decision by the end — it was blocked on writing the `Embedder` nobody had written. Kept here as the eighth instance of this register's standing lesson: the row said "Writing a concrete `Embedder`" in its own falsify-it column, which is the same as saying *do the task*. A blocker whose falsification is "write the code" was never a blocker. | — |
 
 ### Needs the real surface (a person looking at it)
 
@@ -239,6 +240,61 @@ conservative choice, just a broken one.
 ---
 
 ## Log
+
+### T9.6a — real dependency construction · complete · 2026-09-14
+
+**`python -m interview_prep_recall` now starts.** It did not before: `_build_application` raised
+`NotImplementedError`, so the only thing that had ever built an `Application` was a test. The app
+opens, runs the FR63 gate, loads the active note set, runs preflight, and shows the window with
+its blockers. Verified by running it headless in this container — exit 0, no error dialog.
+
+**The embedder was the real work, and it was never "a model download".** `notes/index.py` has
+specified the `Embedder` Protocol since T3.6 and **nothing had ever implemented it**. Every test
+supplies its own fake, which is right for testing similarity arithmetic and is why the gap
+survived nine milestones: with no concrete embedder, `EmbeddingIndex.build` produced no vectors
+and `Prefilter.candidates()` returned `[]` for every utterance — model present or not.
+`notes/embedder.py` is that implementation, lazy-loading for `FasterWhisperTranscriber`'s reason:
+constructing the composition root must not become a 90 MB transfer.
+
+**Three dependencies degrade rather than refuse, and each degradation is named.**
+
+| Missing | What happens | Why not raise |
+|---|---|---|
+| The embedding model (D-U13's first-run download) | Empty index, `embedder_unavailable` on the ring, `model_present` **blocks the session** | Refusing to start takes away the window the user fixes it from |
+| The API key (D-U12) | `selector=None`, stage 1 only, `stage2_absent` on the ring | A keyless run is a supported configuration, not an error |
+| A user-bound cipher (non-Windows) | `UnavailableCipher` — refuses at the write, not at construction | FR82 is kept by writing nothing, not by refusing to exist |
+
+**`model_present` is the first preflight check with a real probe.** Every other check still
+reports "no probe registered", which is the honest answer while there is no device to ask. This
+one answers `not_installed` here, because the embedder can be asked without a network round trip.
+A check nothing answers is the D-20 defect this codebase records five times, and adding one while
+holding the thing that could answer it would have been the sixth.
+
+**OQ-10, answered as the smallest thing that is true:** the report stays cloud-gated and says so.
+`ReportGenerator` accepts `client=None` and refuses with the reason, in the same shape FR80
+already uses for local-only mode — a user told the same condition in two different vocabularies
+would reasonably conclude they were two different problems. A local evidence-only report from the
+tracker's covered/missed sets is *not* built, and nothing here forecloses it.
+
+**What this does not do.** There is still no audio capture (M1) and no overlay (M5), so no session
+can start — preflight says exactly that. The embedder has never encoded anything: the weights come
+from `huggingface.co`, which this container's proxy still denies (AS-9's neighbour, now tracked as
+**AS-10**). The download itself belongs to the first-run wizard (T9.3, blocked on M1).
+
+**Three follow-ups found while doing it, none of them T9.6a's to fix:**
+
+* **`notes_loaded` has no probe and now has an obvious home.** `startup.default_probes` exists,
+  and the application holds the note set, so the check is one line — deliberately not written
+  here, because T9.6a names `model_present` and nothing else. Whoever wires the first device
+  probe should take this one with it.
+* **A note set recovered at startup is not recorded.** `load_active_set` accepts a ring so an
+  FR44 restore that happens before any window exists is visible; the entry point cannot pass one,
+  because the set is an *argument* to the `Application` that owns the ring. Fixing it means
+  letting `Application` accept a ring, which is a change to the composition root's shape.
+* **`DEFAULT_MODEL_ID` is `claude-haiku-4-5-20251001`**, a date-suffixed id. Current model ids
+  carry no date suffix. That is T9.5's row (live pricing and availability) and is left there.
+
+**Tests: 1247 passing** (was 1231), ruff, format and mypy clean.
 
 ### M1 — the spike ran, and found a defect no reading could · 2026-08-16
 
