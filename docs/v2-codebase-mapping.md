@@ -1,6 +1,6 @@
 # v2 Requirements Mapped to the Existing Codebase
 
-**Companion to:** `v2-feature-request.md` (revision 4).
+**Companion to:** `v2-feature-request.md` (revision 5).
 **Updated:** 2026-09-14 for OQ-14's answer and for T9.6a landing on `main` at `13df252`.
 **Question this answers:** does v2 modify this codebase, or start fresh?
 **Date:** 2026-09-14
@@ -63,9 +63,9 @@ Measured, not estimated.
 | `stt/` | 1,834 | **Untouched** | The backend Protocol and its conformance suite already do what v2 needs |
 | `audio/` | 792 | **Untouched** | Windows capture is the requirement (D-U15), not a liability. Still needs M1 validation, which is PR 2 and predates v2 |
 | `session/` | 680 | **One hook** | `PurgeHooks` gains a sixth field, `_purge` a sixth tuple entry (FR112) |
-| `matching/` | 714 | **Untouched** | Stage 1 and stage 2 stay exactly as they are. The suggest lane runs beside them, in its own package, walled by FR113 |
+| `matching/` | 714 | **Changed, still additive** | Stage 1 and stage 2 keep their logic. `Prefilter` takes a list of sets instead of one (FR117), `KIND_TAU_OFFSET` gains a row (FR123), and `MessagesClient` generalises into the provider Protocol (FR126). The suggest lane still runs beside them, walled by FR113 |
 | `tracker/` | 260 | **One new consumer** | The mic stream gains the proactive engine alongside the tracker (D-U23). The tracker itself does not change |
-| `notes/` | 1,103 | **Additive, plus one parameter** | Two extractors and one chunking strategy (FR96–FR98). `model.py` is **not** touched: D-U24 and D-U28 both hold. `store.py` gets one change — its hardcoded `"notesets"` subdirectory becomes a parameter, so the resume library can be a second `NotesStore` (D-U27) instead of a new store |
+| `notes/` | 1,103 | **Additive, plus two changes** | Two extractors and one chunking strategy (FR96–FR98). `store.py`'s hardcoded `"notesets"` subdirectory becomes a parameter (D-U27). `model.py` gains one `SourceKind` member and a version bump to v3 (D-U35) — the only place v2 touches it, and it amends D-U24 rather than sliding past it |
 | `report/` | 1,339 | **Additive** | A company id in the session record (§6.3) and a fifth report section (FR106). `separation.py` is generalised to take a pair rather than a hardcoded one |
 | `diagnostics/` | 233 | **Untouched** | The ring and its field allowlist already cover the new events |
 | `platform/` | 179 | **One stub filled, then wrapped** | `win_capture_exclusion.py` is implemented (FR114). Protocols added later (FR110) |
@@ -104,6 +104,12 @@ lines of working, tested dialogs and the twelve Qt test modules that cover them.
 | FR90 FR91 FR92 | new company store, beside `notes/store.py` | New |
 | FR93 | a second `NotesStore` rooted at `library/`; `notes/store.py` subdirectory parameter (D-U27) | Change, one parameter |
 | FR115 FR116 | copy-into-set in the company editor; provenance via the existing `Note.tags` (D-U28) | New |
+| FR117 FR118 | `matching/prefilter.py` takes a list of sets; `notes/index.py` unchanged | Change, small |
+| FR119 FR120 FR121 | new distiller module reading `report/record.py` | New |
+| FR122 FR123 | `notes/model.py` new `SourceKind` + `SCHEMA_VERSION` 3; `prefilter.py` `KIND_TAU_OFFSET` | Change, schema |
+| FR124 FR125 | `config.py` gains a model per lane; `selector.py` and `generator.py` defaults | Change, config |
+| FR126 FR127 FR128 | `matching/selector.py` `MessagesClient` -> provider Protocol; new OpenAI client; `platform/credentials.py` `KNOWN_ACCOUNTS` | Change, additive |
+| FR129 | `suggest/` request construction, plus a diagnostics-ring counter for cold-cache detection | New |
 | FR94 | `report/store.py` session record; `_reindex` carries it | Change, small |
 | FR95 | company editor writes `INTERVIEWER` chunks through the existing `ContextSet` path | New |
 | FR96 FR97 FR98 | `notes/importer.py`, `ui/import_notes.py` | Change, additive |
@@ -203,3 +209,18 @@ Neither cost approaches the cost of rebuilding 14,873 tested lines.
 
 None of this changes the recommendation. It strengthens it: the one function that made the app
 unrunnable was fixed in a single pull request, by someone reading the same code this document maps.
+
+---
+
+## 10. What revision 5 changed here
+
+- **Company-wide retrieval is a smaller change than it sounds.** `Prefilter` takes a list of context
+  sets rather than one, and the per-set `.npz` cache files are concatenated. No new index type, no
+  new store, no new retrieval path. Keeping the cache per set is what preserves per-set invalidation.
+- **Transcript distillation is the one genuinely new module**, and `notes/model.py` gains its only
+  v2 change: one `SourceKind` member and a schema bump to v3. Storing each distilled interview as a
+  read-only `ContextSet` means the store, index, prefilter and verify paths all apply unchanged.
+- **Multi-provider lands on a Protocol that already exists.** `MessagesClient` in
+  `matching/selector.py` is already the seam; it generalises rather than being invented.
+- **None of this changes the recommendation.** The additions are new modules and one widened
+  parameter. The count of files v2 rewrites is still one: `ui/main_window.py`.

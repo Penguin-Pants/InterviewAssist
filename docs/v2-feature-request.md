@@ -2,7 +2,7 @@
 
 **Status:** Feature request. Not a build plan.
 **Date:** 2026-09-14
-**Revision:** 4. Each revision was reviewed against the codebase rather than against the progress
+**Revision:** 5. Each revision was reviewed against the codebase rather than against the progress
 log. Revision 1 had eleven confirmed errors, revision 2 had ten. Revision 4 answers OQ-14 and
 corrects two claims that `main` overtook. §11, §12 and §13 record every change, so the corrections
 are not silently absorbed.
@@ -70,6 +70,10 @@ real API key. The right-hand column says which.
 
 | Gap | Evidence |
 |---|---|
+| No company-wide memory | Matching reads one `ContextSet`. `Prefilter.note_set` is singular, and `report/store.py` transcripts are never indexed at all |
+| No transcript distillation | Transcripts are stored whole and read whole |
+| Anthropic only | `platform/credentials.py` `KNOWN_ACCOUNTS` is `{deepgram, elevenlabs, anthropic}` |
+| No prompt caching anywhere | Neither `matching/selector.py` nor `report/generator.py` sets `cache_control` |
 | **No session can start** | T9.6a landed on `main` at `13df252`, so `_build_application` is real and the app now launches. But there is still no audio capture (M1) and no overlay wiring (M5), and `model_present` blocks a session until the weights exist. Launching is not running |
 | **Screen-capture exclusion is a stub** | `platform/win_capture_exclusion.py` is a docstring saying "Not yet implemented". **FR14 and FR14a are v1 requirements and are not met.** The overlay is currently visible in a screen share |
 | The embedder has never encoded anything | `notes/embedder.py` now implements the Protocol (T9.6a). AS-10 records that it has never loaded weights: `all-MiniLM-L6-v2` comes from huggingface.co, which the dev container answers 403 to. The adapter is written from documentation, not against the library |
@@ -115,6 +119,13 @@ Continuing `docs/implementation/00-decisions-and-assumptions.md`. D-U13 is the l
 | **D-U25** | **The shared resume is a library, and creating a context set copies the chosen chunks into it.** Shared at the library level, materialised per set. | `EmbeddingIndex.build()`, `Prefilter.note_set`, `ContextSet.verify()` and D-58's snapshot all assume every in-scope note lives in one set. A referenced-but-external source is invisible to all four. Copying keeps every one of those invariants intact. Cost: editing the library does not retro-update existing sets, which is correct anyway, since a past interview must be graded against what you actually had. |
 | **D-U27** | **The resume library holds many named documents, and each one is a `ContextSet` stored through a second `NotesStore`.** | Answers OQ-14. A library document is a name plus a list of chunks, which is exactly `ContextSet`'s shape, so the library inherits atomic write, five-generation backup rotation, corrupt-file recovery and the migration hook without a line of new persistence code. `NotesStore.__init__` hardcodes `root / "notesets"`, so the only change is to make that subdirectory a parameter. |
 | **D-U28** | **A copy into a context set mints fresh note ids and records its origin in `Note.tags`.** | `Note` and `ContextSet` are not touched (D-U24 holds). Fresh ids keep every copy independent, so editing the copy in one interview cannot reach another, and `validate_id`'s FR41 guarantee still holds. `tags` already exists and is already used by matching, so provenance costs no schema change. |
+| **D-U29** | **Retrieval scope is the company, not the interview round.** Every context set the company owns is searched, plus its distilled transcripts. | The round-scoped design was wrong: interview 3 at a company could not recall interview 1. Implemented as a **union of the per-set indexes**, not one merged index — cache files are already per set, so editing round 2's notes re-embeds round 2 only. `Prefilter` takes a list of sets instead of one. |
+| **D-U30** | **A past interview's transcript is conservatively distilled and indexed. The raw transcript is never discarded and never replaced.** | Distillation is additive and loss-averse: filler, false starts, repetition and backchannel go; every factual claim, name, number, commitment and question asked stays. Small details are kept on the assumption they may matter later. Raw stays encrypted and readable as it is today. |
+| **D-U31** | **No Haiku for anything involving analysis.** Report generation, transcript distillation, the suggest lane and the proactive engine run on Sonnet 5 at high effort or Opus 5. | The stage-2 selector is the single exception, revisited once PR 2 measures latency: it picks one id from a closed enum of at most five and is the only call inside the live budget. Supporting fact: **Haiku 4.5 cannot take an `effort` parameter at all** — it still uses `budget_tokens` — which is itself evidence it is the wrong tool for the other four. |
+| **D-U32** | **v2 is multi-provider.** `MessagesClient` generalises into a provider Protocol with an Anthropic implementation and an OpenAI implementation. | `credentials.py`'s `KNOWN_ACCOUNTS` gains `openai`. Model choice becomes per lane, not per app. Both providers can refuse a request, so a refusal path is required on both — OpenAI's strict mode explicitly does not suppress refusals. |
+| **D-U33** | **FR10's guarantee is restated provider-agnostically: the selector's output must be constrained by the decoder, not by the prompt.** Two mechanisms are verified as satisfying it. | Anthropic: forced `tool_choice` with an enum schema. OpenAI: `strict: true`, which uses constrained decoding — after each token the engine masks invalid tokens to probability zero, so an invalid enum value cannot be produced. **A provider without such a mechanism may not host the selector**, because the guarantee would silently degrade into a prompt request. Note that forced tool use is *removed* on Claude Fable 5.1, which returns a 400, so that model would need the `strict` route instead. |
+| **D-U34** | **The suggest lane caches its stable prefix at the default 5-minute TTL.** Never the 1-hour TTL. | Resume, job ad and company research are byte-identical for a whole interview; the utterance and conversation state go after the breakpoint. A cache read refreshes the timer for free and calls land roughly every 30 seconds, so the 5-minute entry stays warm for the session. The 1-hour TTL costs a 2× write and buys nothing here. |
+| **D-U35** | **Adding the transcript kind bumps `ContextSet` to schema v3, with a no-op migration.** | **This amends D-U24.** That decision said note-set files stay at v2, and the *container* part of it holds — a company still is not stored in the note-set file. But a new `SourceKind` member is a schema concern: an older build reading a file containing it raises `NoteSetCorruptError` through `SourceKind(...)`. Bumping the version makes it raise `SchemaTooNewError` instead, which is the refusal the store already has for exactly this. |
 | **D-U26** | **The suggest lane is its own package (`suggest/`) rendered by its own module (`ui/suggest_panel.py`).** `report/separation.py` is generalised and a second assertion added, so recall cannot import suggest and vice versa. | The existing wall is a static import check between a package and a module. It cannot see inside one module, so two lanes in `ui/overlay.py` would be unenforceable. Splitting the modules makes the mechanism that already works apply unchanged. |
 
 ---
@@ -136,6 +147,18 @@ FR1 to FR87 are taken. Numbering starts at FR90.
 | **FR94** | Every saved session is filed under exactly one company and one context set. The session list filters by company. Sessions that exist before the backfill move to a company named `Unfiled`. |
 | **FR95** | A session may carry meeting metadata entered beforehand: title, scheduled time, and named participants with optional role and LinkedIn URL. Participants are written into the context set as `INTERVIEWER` chunks, so they reach matching by the path that already exists. |
 | **FR111** | Switching company is an explicit operation with the same guarantees as FR43's set switch: **refused while a session is running**. It rebuilds the four things `activate_context_set` rebuilds — the active `ContextSet`, `EmbeddingIndex.build()`, the prefilter's set reference, and the tracker's set reference plus its reset — and one new one, the session list's company filter (FR94). A company's **most recently used context set** becomes active; if it has none, the switch creates an empty one rather than leaving no active set. |
+
+### 4.1a Company-wide memory
+
+| ID | Requirement |
+|---|---|
+| **FR117** | **Retrieval is scoped to the company.** Matching searches every context set the company owns plus its distilled transcripts, not only the active set (D-U29). The active set decides what new material is written to; it does not narrow what can be recalled. |
+| **FR118** | The index for a company is the **union of its per-set indexes**. Editing one set re-embeds that set alone. No merged index file is created, because `index/<set_id>.<model>.npz` is already the right granularity and a merged file would re-embed everything on every edit. |
+| **FR119** | After an interview, its transcript is **conservatively distilled** into chunks and added to the company's retrieval scope (D-U30). Distillation removes filler, false starts, verbatim repetition and backchannel, and **nothing else**. Every factual claim, name, number, date, commitment, and question asked is retained. When in doubt the material is kept. |
+| **FR120** | Each distilled chunk **cites the utterance indices it came from**, on the FR78 principle, so it can be audited against the raw record and the user can jump back to what was actually said. A chunk that cannot cite its source is not written. |
+| **FR121** | **The raw transcript is never modified, replaced or deleted by distillation.** It stays in the encrypted session store under its existing retention rule (FR84). Distillation is additive. |
+| **FR122** | Distilled transcripts carry a new `SourceKind`, **`TRANSCRIPT`**, which is **not trackable** (FR70): things you said in a past interview are not talking points to cover in this one. Each past interview's distilled chunks are stored as their own read-only `ContextSet` in the company, named for the interview, so the existing store, index, prefilter and verify path all apply unchanged. |
+| **FR123** | `TRANSCRIPT` gets its own `KIND_TAU_OFFSET` entry, set **above** the user's floor rather than below it. Transcript material is recall support, not prepared content, and should clear a higher bar before it displaces a prep note. D-30's cap of two stage-2 candidates per kind applies to it unchanged. |
 
 ### 4.2 Ingestion
 
@@ -164,6 +187,17 @@ FR1 to FR87 are taken. Numbering starts at FR90.
 | **FR104** | The app raises **next-best-action prompts** unprompted: a prepared point not yet used, a question worth asking back, a job-ad requirement not yet evidenced. Each cites its source chunk. Rate-limited, and never while the interviewer is speaking. |
 | **FR105** | The app raises **gap and risk alerts**: a job-ad requirement raised with no matching evidence, a statement contradicting a `RESUME` chunk, a single answer running long. Each cites the chunk or utterance that triggered it. An alert that cannot cite one is not shown (FR78 principle). Requires the mic stream (D-U23). |
 | **FR106** | The report gains a **fifth section covering the suggest lane**: what was suggested, what you used, what you ignored. Same evidence rule. Omitted, not faked, when the lane was off. |
+
+### 4.4a Models and providers
+
+| ID | Requirement |
+|---|---|
+| **FR124** | **Model is configured per lane, not per app.** Report generation, transcript distillation, the suggest lane and the proactive engine default to **Sonnet 5 at high effort, or Opus 5**. None of them may be run on a Haiku-tier model (D-U31). |
+| **FR125** | The **stage-2 selector** keeps a fast model as its default, as the single exception to FR124, and the exception is **time-boxed**: it is re-decided once PR 2 reports real end-to-end latency. It classifies against a closed enum of at most five candidates and is the only call inside the live 2-3 second budget. |
+| **FR126** | **The model client is a provider Protocol** with an Anthropic implementation and an OpenAI implementation (D-U32). `KNOWN_ACCOUNTS` in `platform/credentials.py` gains `openai`. A key for either provider is optional and its absence degrades exactly as D-U12 already specifies. |
+| **FR127** | **A provider may host the stage-2 selector only if it can constrain the output structurally at decode time** (D-U33). Two mechanisms are verified: Anthropic's forced `tool_choice` with an enum schema, and OpenAI's `strict: true`, which masks invalid tokens to zero probability so an invalid enum value cannot be emitted. Prompt-only instruction to "answer with one id" does **not** satisfy this and may not be used. |
+| **FR128** | **Both providers can refuse a request**, and a refusal is not an error to swallow. The suggest lane treats a refusal as FR102's no-content case and states it in one line. The selector treats it as a stage-2 failure and falls back per D-U3. Note that OpenAI's strict mode constrains the schema but does **not** suppress refusals. |
+| **FR129** | The suggest lane **caches its stable prefix** — resume, job ad, company research — at the default 5-minute TTL, with the utterance and conversation state placed after the cache breakpoint (D-U34). The app **verifies the cache is working** by checking that cached-read tokens are non-zero across a session, and records the result to the diagnostics ring; a silently cold cache is a cost bug that reports no error. |
 
 ### 4.5 Product surface
 
@@ -203,7 +237,9 @@ App root
 │                                   a ContextSet each, same store
 ├── companies/<uuid>.json        NEW STORE, own schema version  D-U24
 │   └── fields, ordered context-set ids, last-used set id       FR91, FR111
-├── notesets/<uuid>.json         UNCHANGED, stays schema v2
+├── notesets/<uuid>.json         schema v3 (one new SourceKind)  D-U35
+│     ├── editable sets, one per interview round              FR92
+│     └── read-only TRANSCRIPT sets, one per past interview   FR122
 ├── index/<uuid>.<model>.npz     UNCHANGED, caches survive
 └── sessions/<id>.transcript     gains a company id             FR94
 ```
@@ -211,6 +247,11 @@ App root
 A company **references** context sets by id. It does not contain them. That is what lets the
 existing note-set store, its atomic write, its backup rotation and its embedding cache carry on
 untouched.
+
+**Retrieval reads every set the company references** (FR117), as a union of their per-set index
+files. A distilled transcript is just another set in that list, marked read-only and carrying
+`TRANSCRIPT` chunks. That is the whole of the company-wide memory: no new store, no new index type,
+no new retrieval path.
 
 ### 6.2 Backfill, not a schema migration
 
@@ -259,6 +300,11 @@ session can be read or written off-platform. It is listed in §8 as such.
 | Area | Change | Risk |
 |---|---|---|
 | new `suggest/` | The generator. Unconstrained output, unlike the selector. Rendered by `ui/suggest_panel.py` | Walled from recall by FR113's import assertions, not by convention |
+| `matching/prefilter.py` | Takes a **list** of context sets rather than one, and gains a `TRANSCRIPT` entry in `KIND_TAU_OFFSET` (FR117, FR123) | The union is the whole of D-U29's implementation. Resist adding a merged index |
+| `matching/selector.py` | `MessagesClient` generalises into the provider Protocol (FR126). Anthropic and OpenAI implementations behind it | FR127 is the constraint that matters: a provider without decode-time enforcement may not host the selector |
+| new distiller | Post-interview, offline, one call per interview. Reads the session record, writes a read-only `ContextSet` of `TRANSCRIPT` chunks | Loss-aversion is the whole specification (FR119). It is easier to write a distiller that summarises well than one that drops nothing important |
+| `notes/model.py` | One new `SourceKind` member, and `SCHEMA_VERSION` to 3 with a no-op migration (D-U35) | This is the one place v2 touches `model.py`, and D-U24's "stays at v2" is amended rather than quietly broken |
+| `platform/credentials.py` | `KNOWN_ACCOUNTS` gains `openai` | One line, but it is the seam the second provider hangs from |
 | `report/separation.py` | Generalised from one hardcoded pair to a checkable rule, then given FR113's second pair | It is the only structural guarantee in the product. Changing it needs its own tests first |
 | `session/` | Owns `ConversationState` (FR103), cleared by a sixth purge hook (FR112) | `PurgeHooks` is a frozen dataclass and `_purge` iterates a hardcoded tuple whose order is FR59. Both change together, and FR59's text changes with them |
 | new `proactive/` | Detectors for FR104 and FR105. Each returns a cited prompt or nothing | Rate limiting and the never-interrupt rule live here, not in the UI |
@@ -288,17 +334,19 @@ rough and are for ordering, not for planning.
 | **2. Windows reality** | Latency harness, device-enumeration code, D-68 keep-alive wiring | **Run M1 on your Windows 11 machine with a real audio device.** Nothing downstream is trustworthy until this passes | M + hardware |
 | **3. Capture exclusion** | `SetWindowDisplayAffinity` via ctypes (FR114, FR14, FR14a) | **Verify on a real screen share.** Headless cannot test this | S + hardware |
 | **3b. UI shell decision** | — | Already taken: new shell, existing dialogs kept as components (§7) | — |
-| **4. Company store** | New store, FR90 to FR92, FR111, §6.2 backfill | — | L |
+| **4. Company store** | New store, FR90 to FR92, FR111, FR117, FR118 company-wide retrieval, §6.2 backfill | — | L |
 | **5. Session filing** | FR94, FR95, §6.3 record backfill | **Run the backfill.** Windows-only: `default_cipher()` raises elsewhere (D-40) | M + hardware |
 | **6. Resume library** | FR93, FR115, FR116, the `NotesStore` subdirectory parameter, copy-into-set, library editor | — | M |
 | **7. Ingestion** | PDF and DOCX, FR96 to FR98, multi-document import into the library | Supply real resumes and job ads as fixtures | M |
 | **8. App shell** | Workspace UI (FR107), company editor, PRISM applied | Judge it at a glance, as with FR72's 1 m test | L |
 | **9. Separation wall** | Generalise `separation.py`, add FR113's assertions, with tests first | — | S |
 | **10. Conversation state** | FR103, FR112 sixth purge hook, FR59 amended | — | M |
-| **11. Suggest lane** | `suggest/`, `ui/suggest_panel.py`, FR99 to FR102 | **Approve FR101's disclosure wording.** An ethics decision, not copy | L |
+| **11. Suggest lane** | `suggest/`, `ui/suggest_panel.py`, FR99 to FR102, FR129's caching and its cold-cache check | **Approve FR101's disclosure wording.** An ethics decision, not copy | L |
 | | *Depends on PR 3 (FR114) **and** PR 2: OQ-12 and §9 both need PR 2's latency numbers before this lane's budget can be set* | | |
 | **12. Proactive** | `proactive/`, FR104, FR105, D-U23 mic routing, rate limits | Judge whether the alerts help or intrude, live | L |
-| **13. Report extension** | FR106 | **An Anthropic key.** T4.7 has never run against one | S |
+| **13. Report extension** | FR106, plus moving the report off Haiku per FR124 | **An API key.** T4.7 has never run against one | S |
+| **16. Transcript distillation** | FR119 to FR123, the `TRANSCRIPT` kind, schema v3, the distiller | **Judge the output on a real transcript** (OQ-21). Only you can say whether it dropped something that mattered | M |
+| **17. Provider abstraction** | FR126 to FR128, Anthropic and OpenAI implementations, refusal paths | **An OpenAI key** to verify the second implementation | M |
 | **14. Platform seam** | FR110 Protocols | — | **L, and growing** |
 | **15. Packaging** | PyInstaller build, installer script, **re-run PR 1's first-run download against the packaged build** | **Buy a code-signing certificate.** Needs a legal identity and money | M + purchase |
 
@@ -364,7 +412,9 @@ it is named rather than discovered.
 
 | ID | Question | Owner | Blocks |
 |---|---|---|---|
-| **OQ-12** | Which model serves the suggest lane? The selector's Haiku is tuned for a one-token enum, not for drafting | Needs PR 2's latency numbers | PR 11 |
+| **OQ-12** | ~~Which model serves the suggest lane?~~ **Narrowed by D-U31: Sonnet 5 at high effort or Opus 5.** What remains is which of those two, and whether streaming closes the latency gap | Needs PR 2's latency numbers | PR 11 |
+| **OQ-20** | Does the stage-2 selector stay on a fast model, or move up with everything else (FR125)? | Needs PR 2's latency numbers | Re-decide after PR 2 |
+| **OQ-21** | How aggressive is "conservative" distillation in practice? The rule is written; the ratio it produces on a real 45-minute interview is unmeasured | You, on a real transcript | PR 16 |
 | **OQ-13** | Does the suggest lane need its own confidence floor, or does it inherit the prefilter's τ? | Design | PR 11 |
 | ~~**OQ-14**~~ | **RESOLVED 2026-09-14: many documents.** Became D-U27, D-U28, FR93, FR115 and FR116 | — | Answered |
 | **OQ-15** | How do a proactive alert and a recall snippet share the overlay when both fire? | Design | PR 12 |
@@ -479,3 +529,66 @@ remains of PR 1 is the first-run download, which was already marked as yours.
 
 The app could not be launched here to confirm, because PySide6 needs `libEGL` and this container
 lacks it — the same reason the 12 Qt test modules do not run here. **Stated rather than claimed.**
+
+---
+
+## 14. What changed in revision 5
+
+Two directives, and both reached further than they first appeared.
+
+### "The bucket should hold everything, and be used in all future talks"
+
+Revision 4 scoped retrieval to one interview round. **That was wrong**, and it is the kind of wrong
+that only shows up on the third interview at a company, when nothing from the first two comes back.
+
+- **D-U29, FR117, FR118.** Retrieval scope becomes the company. Implemented as a **union of the
+  per-set indexes**, not a merged index, because the cache files are already one per set and merging
+  them would re-embed everything whenever one note changes.
+- **D-U30, FR119 to FR123.** Past transcripts are conservatively distilled and join the scope.
+  **Loss-aversion is the specification**: filler, false starts, repetition and backchannel go, and
+  nothing else does. Every claim, name, number, date, commitment and question stays, and when in
+  doubt the material is kept. Each chunk cites the utterances it came from, so it can be audited
+  against the raw record.
+- **The raw transcript is never touched.** Distillation is additive (FR121).
+- Distilled transcripts get their own kind so they cannot become talking points to "cover" (FR70's
+  failure mode), their own threshold offset **above** the user's floor, and the per-kind cap of two
+  stage-2 candidates that D-30 already enforces.
+- **D-U35 amends D-U24.** A new `SourceKind` is a schema concern even though the company container
+  is not: an older build reading the new member raises `NoteSetCorruptError`. Bumping `ContextSet`
+  to v3 makes it raise `SchemaTooNewError`, which is the refusal the store already has for this.
+  Revision 4 said note-set files stay at v2; the container half of that holds, the kind half does not.
+
+### "No Haiku for anything involving thinking and analysis"
+
+- **D-U31, FR124.** Report generation, transcript distillation, the suggest lane and the proactive
+  engine run on Sonnet 5 at high effort or Opus 5. A supporting fact rather than a preference:
+  **Haiku 4.5 cannot accept an `effort` parameter at all** — it still takes `budget_tokens`.
+- **FR125.** The stage-2 selector is the one exception, and it is time-boxed rather than permanent.
+  It classifies against a closed enum of at most five and is the only call inside the live budget.
+  OQ-20 re-decides it on PR 2's measurements.
+
+### Multi-provider, and the guarantee that had to survive it
+
+- **D-U32, FR126.** `MessagesClient` generalises into a provider Protocol with Anthropic and OpenAI
+  implementations. GPT-5.6 Sol and Terra were verified as real and current before designing against
+  them.
+- **D-U33, FR127.** FR10's anti-fabrication guarantee is restated provider-agnostically: **the
+  output must be constrained at decode time, not by the prompt.** Two mechanisms verified as
+  satisfying it — Anthropic's forced `tool_choice` with an enum, and OpenAI's `strict: true`, which
+  masks invalid tokens to zero probability so an invalid enum value cannot be produced. A provider
+  without such a mechanism may not host the selector.
+- Worth knowing before anyone reaches for the newest model: **forced tool use is removed on Claude
+  Fable 5.1**, which returns a 400. That model would have to take the `strict` route instead.
+- **FR128.** Both providers can refuse, and OpenAI's strict mode explicitly does not suppress
+  refusals, so a refusal path is required on both rather than assumed away.
+
+### Caching
+
+- **D-U34, FR129.** The suggest lane caches resume, job ad and company research at the **default
+  5-minute TTL**, never the 1-hour one: a read refreshes the timer for free and calls land roughly
+  every 30 seconds, so the short entry stays warm all session while the long one costs a 2× write
+  for nothing. The app checks that cached reads are actually non-zero, because a cold cache raises
+  no error and just quietly costs money.
+- The stage-2 selector is **not** cached: its prefix is a few hundred tokens and changes every
+  utterance. This is also where the Haiku floor bites — 4,096 tokens minimum to cache on Haiku 4.5
+  against 1,024 on Sonnet 5 and 512 on Opus 5 — which is a second, independent argument for FR124.
