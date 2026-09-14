@@ -25,6 +25,7 @@ passed. The honest screen for "you cannot start yet" is the list of reasons.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from dataclasses import asdict
 
@@ -246,6 +247,28 @@ class MainWindow(QMainWindow):
             parent=self,
         )
 
+        # T5.2 — FR14/FR14a. `winId()` forces the native window to exist, which is what
+        # `SetWindowDisplayAffinity` needs a handle to; it does not require the panel to
+        # be visible yet, so this runs once, here, rather than on every `showEvent`.
+        # Non-Windows platforms have no such call — `os.name` (not `sys.platform`, which
+        # is also "win32" under Wine) is the same check `report/store.py` uses for DPAPI,
+        # so both platform-only bindings agree on what "Windows" means.
+        #
+        # The result is stashed rather than pushed through `monitor.update()` here,
+        # because `monitor.on_change` is not wired to this panel yet (below) — an update
+        # now would notify nobody. It reaches `Health` at the one-time push further down,
+        # merged in through `HealthMonitor.update` rather than written directly, so
+        # `Health`'s other fields survive alongside it.
+        if os.name == "nt":
+            from interview_prep_recall.platform.win_capture_exclusion import (
+                exclude_from_capture,
+            )
+
+            capture_excluded = exclude_from_capture(int(self.overlay.winId()))
+        else:
+            capture_excluded = False
+        application.ring.record("capture_exclusion", ok=capture_excluded)
+
         # FR12's checklist gets its production feed here (T7.4). **The signal's `emit`,
         # not the setter**: `Application.consume` runs on whichever thread the STT backend
         # chose, and a bound widget method stored here would mutate `QWidget` state from
@@ -291,6 +314,9 @@ class MainWindow(QMainWindow):
         # this project has hit that shape (D-53, D-54). The lambda closes over
         # `application` and never over `self`, so it is not a cycle either.
         self.destroyed.connect(lambda: setattr(application.monitor, "on_change", None))
+        # T5.2's result joins `Health` here, through `update()` rather than a direct
+        # field write, so the merge goes through the one place `Health` is mutated.
+        application.monitor.update(capture_excluded=capture_excluded)
         # Pushed once so the strip shows the current state rather than a default nobody
         # chose, on a window that may be built mid-session.
         self.overlay.update_health(application.monitor.health)

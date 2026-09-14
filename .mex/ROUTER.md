@@ -60,8 +60,10 @@ authoritative build log — read it before trusting this summary. It tracks its 
   which refuses at the write so FR82 is kept by writing nothing.
 
 **Not yet built:**
-- Four modules are pure stubs with no logic: `watchdog.py`, `audio/echo.py` (FR57, audio-domain
-  echo detection), `platform/win_capture_exclusion.py` (FR14/14a), `platform/win_wer.py` (FR16).
+- Two modules are pure stubs with no logic: `watchdog.py`, `audio/echo.py` (FR57, audio-domain
+  echo detection). `platform/win_capture_exclusion.py` (FR14/14a) and `platform/win_wer.py`
+  (FR16) were built and wired 2026-09-14 — see the T5.2/T6.4 blocked-register rows in
+  `docs/implementation/06-progress.md`.
 - Report export covers Markdown only; HTML/PDF export do not exist.
 - A basic multi-session picker exists (`report/store.list_sessions()`, used by the report view),
   but there is no history/analytics view beyond it.

@@ -259,6 +259,42 @@ def test_declined_consent_exits_without_building(tmp_path: Path, qapp: QApplicat
     assert calls == []
 
 
+@pytest.mark.windows
+def test_wer_dumps_are_disabled_before_anything_else_runs(
+    tmp_path: Path, qapp: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T6.4 — FR16. Even a declined-consent run, which builds nothing, must not leave a
+    window where a crash between process start and the consent dialog can reach WER.
+
+    `main`'s call is behind `os.name == "nt"` (matching T5.2 and DPAPI's own gates), so
+    this only exercises the wiring on the platform where it actually fires.
+    """
+    import os
+
+    if os.name != "nt":
+        pytest.skip("the WER call is gated on os.name == 'nt'")
+
+    from interview_prep_recall import __main__ as entry
+    from interview_prep_recall.platform import win_wer
+
+    calls: list[None] = []
+    monkeypatch.setattr(win_wer, "disable_wer_dumps", lambda: calls.append(None))
+
+    def never(root: Path) -> Application:
+        raise AssertionError("must not be called")
+
+    import interview_prep_recall.ui.consent_dialog as consent_dialog
+
+    original = consent_dialog.present_disclosure
+    consent_dialog.present_disclosure = lambda _text, parent=None: False  # type: ignore[assignment]
+    try:
+        entry.main([str(tmp_path)], build_application=never)
+    finally:
+        consent_dialog.present_disclosure = original  # type: ignore[assignment]
+
+    assert calls == [None]
+
+
 def test_app_data_root_prefers_appdata(monkeypatch: pytest.MonkeyPatch) -> None:
     from interview_prep_recall.__main__ import APP_DIR_NAME, app_data_root
 
@@ -449,7 +485,9 @@ def test_the_window_opens_the_diagnostics_viewer(
 
     view = window.open_diagnostics()
 
-    assert [row[1] for row in view.rows] == ["stt_connected"]
+    # T5.2 logs `capture_exclusion` as the window is built, after the `stt_connected`
+    # row this test records by hand — the window's own diagnostic, not a leftover.
+    assert [row[1] for row in view.rows] == ["stt_connected", "capture_exclusion"]
 
 
 def test_the_viewer_is_held_so_it_does_not_vanish(

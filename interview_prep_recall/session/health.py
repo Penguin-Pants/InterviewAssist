@@ -177,7 +177,17 @@ class HealthMonitor:
         return self.health
 
     def reset(self) -> Health:
-        self.health = Health()
+        """Clears session-scoped state at `_purge` (FR59). **`capture_excluded` is not
+        session-scoped and survives.**
+
+        FR14a's warning is a fact about the window — `SetWindowDisplayAffinity` runs
+        once, at construction — not about the session that happens to be running. A
+        plain `Health()` here wiped it back to `None` on every `end_session()`, so a
+        failed exclusion's persistent warning silently vanished the moment the first
+        interview ended, even though the overlay was still unprotected and nothing had
+        re-checked or retried the API call. Found by Codex review on PR #43.
+        """
+        self.health = Health(capture_excluded=self.health.capture_excluded)
         self._history.clear()
         self._notify()
         return self.health
