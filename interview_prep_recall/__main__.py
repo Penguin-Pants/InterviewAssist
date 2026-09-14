@@ -11,9 +11,9 @@ an accident — the wiring is testable on a machine that cannot run the UI preci
 because no Qt import can reach it. Putting `QApplication` there would trade a tested
 guarantee for a filename.
 
-**Real dependencies are still missing and this does not hide it.** There is no audio
-capture (M1) and no overlay (M5), so no session can start. Preflight says so, in FR38's
-own vocabulary, and the window shows the blockers.
+**Real dependencies are constructed here (T9.6a) and the missing ones are not hidden.**
+There is still no audio capture (M1) and no overlay (M5), so no session can start.
+Preflight says so, in FR38's own vocabulary, and the window shows the blockers.
 """
 
 from __future__ import annotations
@@ -23,6 +23,15 @@ import sys
 from pathlib import Path
 
 from interview_prep_recall.app import Application
+from interview_prep_recall.notes.embedder import SentenceTransformerEmbedder
+from interview_prep_recall.platform.credentials import CredentialStore
+from interview_prep_recall.report.generator import MessagesClient
+from interview_prep_recall.report.store import (
+    Cipher,
+    CipherUnavailableError,
+    UnavailableCipher,
+    default_cipher,
+)
 from interview_prep_recall.startup import (
     ApplicationFactory,
     StartupOutcome,
@@ -37,8 +46,8 @@ EXIT_CONSENT_DECLINED = 1
 EXIT_STARTUP_FAILED = 2
 
 STARTUP_FAILED_NOTICE = (
-    "Interview Prep Recall could not start.\n\nThis build is incomplete: some of what "
-    "it needs is not implemented yet.\n\n"
+    "Interview Prep Recall could not start.\n\nSomething it needs was not available. "
+    "The details follow.\n\n"
 )
 """Shown instead of a traceback. An entry point's job is to start or to say why it
 cannot, and a stack trace is neither — it is what the user sees when nobody decided what
@@ -61,31 +70,74 @@ def app_data_root() -> Path:
 
 
 def _build_application(root: Path) -> Application:
-    """Construct the composition root with its real dependencies. **Not yet written.**
+    """Construct the composition root with its real dependencies (T9.6a).
 
-    Deliberately unimplemented rather than guessed at, because two of the four
-    dependencies need a decision that is not this task's to make:
+    Four dependencies, and each one's answer is a decision somebody else made:
 
-    * ~~**Which note set.**~~ **Answered by T3.8.** `editor.load_active_set` reads the id
-      FR43 puts in `QSettings` — the persisted set, else the only one, else a new empty
-      one — and the editor is what writes it. The behaviour is the requirement's rather
-      than this function's guess, which is why it was worth waiting for.
-    * **What an absent API key means.** D-U3 has a local-only degraded path; whether a
-      first run with no key enters it silently or prompts is a product decision that
-      belongs with the setup wizard (T9.3).
-    * **Embedder and cipher** are the straightforward two: a real sentence-transformers
-      model (blocked here by the same network policy as AS-9) and DPAPI (Windows only).
-      Both already sit behind Protocols, so the seams exist.
+    * **Which note set** — T3.8. `editor.load_active_set` reads the id FR43 puts in
+      `QSettings`: the persisted set, else the only one, else a new empty one.
+    * **The model client** — D-U12. A key is optional, so its absence is a configuration
+      and not a failure, and the whole degraded path already existed waiting for someone
+      to select it.
+    * **The embedder** — D-U13, and the part that was never merely a download: nothing
+      had ever implemented the Protocol.
+    * **The cipher** — DPAPI where there is one, and a refusal that fires at the write
+      rather than here where there is not.
 
-    Recorded as **T9.6a**. Raising is the honest state: an entry point that invented
-    answers to the first two would ship them as decisions nobody made.
+    **Nothing missing is hidden and nothing missing is fatal.** Each dependency that
+    cannot be satisfied on this machine degrades to a state preflight can name, because
+    the alternative — refusing to start — takes away the window the user fixes it from.
+    There is still no audio capture (M1) and no overlay (M5), so no session can start;
+    preflight says so in FR38's own vocabulary and the window shows the blockers.
     """
-    raise NotImplementedError(
-        "T9.6a: real dependency construction needs the no-API-key policy from T9.3, plus "
-        "a real embedding model (blocked here by network policy, not by platform) and the "
-        "Windows-only DPAPI cipher. FR43's active-note-set selection is done — "
-        "`ui.editor.load_active_set(root, default_settings())`"
+    from interview_prep_recall.ui.editor import load_active_set
+    from interview_prep_recall.ui.overlay import default_settings
+
+    key = CredentialStore().get("anthropic")
+    client, absent = _model_client(key)
+
+    try:
+        cipher: Cipher = default_cipher()
+    except CipherUnavailableError as exc:
+        cipher = UnavailableCipher(str(exc))
+
+    application = Application(
+        root=root,
+        embedder=SentenceTransformerEmbedder(),
+        client=client,
+        cipher=cipher,
+        # No ring to hand it: the set has to be loaded before the `Application` that owns
+        # the ring exists, so a backup restored during this call is not recorded. Left as
+        # a follow-up rather than papered over with a second ring nothing exports.
+        context_set=load_active_set(root, default_settings()),
     )
+    if key is not None:
+        # FR19's guard, armed on the ring that is actually exported. `CredentialStore`
+        # does this itself when given a ring, and it cannot be given this one — the key
+        # is needed to build the client, and the client to build the application that
+        # owns the ring. So it is armed the moment that ordering allows.
+        application.ring.register_secret(key)
+    if absent is not None:
+        application.ring.record("stage2_absent", reason=absent)
+    return application
+
+
+def _model_client(key: str | None) -> tuple[MessagesClient | None, str | None]:
+    """The Anthropic client, or why there is not one. Never raises.
+
+    Both reasons are ordinary states rather than errors — D-U12 makes a keyless run
+    supported, and the `[cloud]` extra is optional — so both return rather than raise,
+    and both are recorded so a user who expected stage-2 matching can see which one
+    applies to them.
+    """
+    if key is None:
+        return None, "no_key"
+    try:
+        from anthropic import Anthropic
+    except ImportError:
+        return None, "sdk_missing"
+    messages: MessagesClient = Anthropic(api_key=key).messages
+    return messages, None
 
 
 def main(

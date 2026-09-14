@@ -70,6 +70,31 @@ def default_cipher() -> Cipher:
     return DpapiCipher()
 
 
+class UnavailableCipher:
+    """A `Cipher` that refuses at the write, not at construction (T9.6a).
+
+    **Not a weaker cipher — no cipher, deferred.** `default_cipher()` raising is the right
+    answer to "encrypt this", and the wrong answer to "build the application", which is
+    where the entry point has to call it: a platform with no user-bound key would fail to
+    *start*, taking the notes editor, the settings surface and the diagnostics view with
+    it, none of which touch an interview transcript.
+
+    So the refusal moves to the only operation it is actually about. Storing a session
+    raises; everything else runs. FR82's guarantee is unchanged, because the thing it
+    guarantees is that a transcript is never written under weaker protection — and here
+    one is never written at all.
+    """
+
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+
+    def encrypt(self, plaintext: bytes) -> bytes:
+        raise CipherUnavailableError(self.reason)
+
+    def decrypt(self, ciphertext: bytes) -> bytes:
+        raise CipherUnavailableError(self.reason)
+
+
 @dataclass(frozen=True)
 class SessionSummary:
     """FR83's list row. Deliberately thin — the point of a session list is to let the

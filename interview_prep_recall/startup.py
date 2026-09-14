@@ -43,6 +43,7 @@ from interview_prep_recall.first_run import (
     FirstRunConsent,
     require_consent,
 )
+from interview_prep_recall.notes.embedder import SentenceTransformerEmbedder
 from interview_prep_recall.session.preflight import Preflight, PreflightReport, Probe
 
 CONFIG_RESET_NOTICE = (
@@ -161,8 +162,28 @@ def run_preflight(
     it will call.
     """
     preflight = Preflight(
-        probes or {},
+        default_probes(application) if probes is None else probes,
         cloud_enabled=application.config.stt_backend is not SttBackendChoice.LOCAL,
         ring=application.ring,
     )
     return preflight.run()
+
+
+def default_probes(application: Application) -> dict[str, Probe]:
+    """The checks this build can answer, read off the application it was handed.
+
+    **Deliberately not "all of them".** Most of `CHECKS` needs a device, a Windows API or
+    a network round trip, and none of those exist to ask yet — a check with no probe
+    already reports as unsatisfied rather than as passing, which is the honest state and
+    the reason this can be a partial map.
+
+    `model_present` is answerable because T9.6a constructs a real embedder, and the
+    `isinstance` is what keeps it that way: an `Application` built with a test double
+    gets no probe and the check stays unsatisfied, rather than a fake reporting the
+    production model as present.
+    """
+    probes: dict[str, Probe] = {}
+    embedder = application.embedder
+    if isinstance(embedder, SentenceTransformerEmbedder):
+        probes["model_present"] = embedder.readiness
+    return probes

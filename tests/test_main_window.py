@@ -21,8 +21,14 @@ from PySide6.QtWidgets import QApplication, QDialog  # noqa: E402
 
 from interview_prep_recall.app import Application  # noqa: E402
 from interview_prep_recall.config import ConfigStore  # noqa: E402
+from interview_prep_recall.diagnostics.ring import DiagnosticContentError  # noqa: E402
 from interview_prep_recall.first_run import CONSENT_FILENAME, FirstRunConsent  # noqa: E402
 from interview_prep_recall.notes.model import ContextSet, Note, SourceKind  # noqa: E402
+from interview_prep_recall.platform.credentials import (  # noqa: E402
+    SERVICE_NAME,
+    CredentialStore,
+    InMemoryCredentialBackend,
+)
 from interview_prep_recall.session.manager import PauseCause, SessionState  # noqa: E402
 from interview_prep_recall.session.preflight import (  # noqa: E402
     CHECKS,
@@ -55,6 +61,11 @@ class FlatEmbedder:
 
     def encode(self, texts: list[str]) -> np.ndarray:
         return np.ones((len(texts), 2), dtype=np.float32)
+
+
+def _empty_vault() -> CredentialStore:
+    """A credential vault with nothing in it — a first run, on any machine."""
+    return CredentialStore(InMemoryCredentialBackend())
 
 
 @pytest.fixture
@@ -265,13 +276,75 @@ def test_app_data_root_falls_back_off_windows(monkeypatch: pytest.MonkeyPatch) -
     assert app_data_root() == Path("/home/someone/.config") / APP_DIR_NAME
 
 
-def test_real_dependency_construction_is_recorded_as_unfinished(tmp_path: Path) -> None:
-    """T9.6a. It raises rather than guessing at FR43's active-note-set selection and the
-    no-API-key policy — inventing those here would ship them as decisions nobody made."""
-    from interview_prep_recall.__main__ import _build_application
+def test_real_dependency_construction_produces_a_runnable_application(
+    tmp_path: Path, qapp: QApplication
+) -> None:
+    """T9.6a. The four dependencies are constructed, and none of them is a test double.
 
-    with pytest.raises(NotImplementedError, match="T9.6a"):
-        _build_application(tmp_path)
+    This is the assertion the entry point existed without for nine milestones: the
+    composition root was reachable only from tests, so "the app runs" was a claim no
+    check could make.
+    """
+    from interview_prep_recall.__main__ import _build_application
+    from interview_prep_recall.notes.embedder import SentenceTransformerEmbedder
+
+    application = _build_application(tmp_path)
+
+    assert isinstance(application.embedder, SentenceTransformerEmbedder)
+    assert application.context_set is not None
+    assert application.root == tmp_path
+
+
+def test_a_keyless_run_loses_stage_two_and_nothing_else(
+    tmp_path: Path, qapp: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D-U12. No key is a supported configuration, so it degrades rather than refusing.
+
+    The vault is substituted rather than trusted to be empty: a contributor with a real
+    key in their Credential Manager would otherwise run a different test from CI, and the
+    one that fails would be the machine that is *more* like a user's.
+    """
+    from interview_prep_recall import __main__ as entry
+
+    monkeypatch.setattr(entry, "CredentialStore", _empty_vault)
+    application = entry._build_application(tmp_path)
+
+    assert application.client is None
+    assert application.pipeline.selector is None, "stage 2 cannot run without a key"
+    assert application.prefilter is not None, "stage 1 must survive a missing key"
+    assert any(e.event == "stage2_absent" for e in application.ring.snapshot())
+
+
+def test_a_stored_key_is_armed_against_the_diagnostic_ring(
+    tmp_path: Path, qapp: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """FR19, at the one point in the app where a key is read before a ring exists.
+
+    `CredentialStore` arms the ring itself when it is given one, and the entry point
+    cannot give it this one: the key builds the client, the client builds the application,
+    and the application owns the ring. So the guard has to be re-armed afterwards, and
+    "afterwards" is exactly the kind of step that gets dropped without a test.
+    """
+    from interview_prep_recall import __main__ as entry
+
+    vault = InMemoryCredentialBackend()
+    vault.set_password(SERVICE_NAME, "anthropic", "sk-ant-not-a-real-key")
+    monkeypatch.setattr(entry, "CredentialStore", lambda: CredentialStore(vault))
+
+    application = entry._build_application(tmp_path)
+
+    with pytest.raises(DiagnosticContentError):
+        application.ring.record("preflight_check", reason="sk-ant-not-a-real-key")
+
+
+def test_the_model_check_is_wired_to_the_real_embedder(tmp_path: Path, qapp: QApplication) -> None:
+    """T9.6a's `model_present` probe. A check nothing answers is the D-20 defect."""
+    from interview_prep_recall.__main__ import _build_application
+    from interview_prep_recall.startup import default_probes
+
+    application = _build_application(tmp_path)
+
+    assert "model_present" in default_probes(application)
 
 
 def test_a_failed_startup_exits_cleanly_instead_of_crashing(

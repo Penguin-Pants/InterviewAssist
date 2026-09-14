@@ -116,6 +116,9 @@ module = [
     "faster_whisper",
     "sentence_transformers",
     "websockets",
+    # In the [cloud] extra, imported lazily by the entry point's client factory (T9.6a).
+    # Same category as `websockets`: CI installs [dev,ui] only, so mypy resolves neither.
+    "anthropic",
     # Resolved and type-checked when the [ui] extra is installed (CI installs it). Listed
     # so a contributor who installed only [dev] gets a mypy run that fails on real
     # problems rather than on a missing optional dependency.
