@@ -17,7 +17,7 @@ edges:
   - target: patterns/add-ui-widget.md
     condition: when building UI that displays session progress or findings
 grounds_to: []
-last_updated: 2026-08-16
+last_updated: 2026-09-14
 mex:
   id: mx_01M2GHK76CSP63RZMP9N9ZWKXN
   type: pattern

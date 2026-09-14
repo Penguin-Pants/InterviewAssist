@@ -22,7 +22,7 @@ edges:
 #   - node: "function:<tier-1-id>"
 #     fingerprint: "mh:64:<hex>"
 grounds_to: []
-last_updated: 2026-08-16
+last_updated: 2026-09-14
 mex:
   id: mx_01M2GHK6R6GR8Z910CVXWDKJFK
   type: convention

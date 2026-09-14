@@ -19,7 +19,7 @@ edges:
 # Decisions usually ground sparsely; add only symbols that implement the decision.
 # Entry shape: { node: "function:<tier-1-id>", fingerprint: "mh:64:<hex>" }
 grounds_to: []
-last_updated: 2026-08-16
+last_updated: 2026-09-14
 ---
 
 # Decisions
