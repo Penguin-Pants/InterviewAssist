@@ -1,6 +1,6 @@
 # v2 Requirements Mapped to the Existing Codebase
 
-**Companion to:** `v2-feature-request.md` (revision 8).
+**Companion to:** `v2-feature-request.md` (revision 9).
 **Updated:** 2026-09-14 for OQ-14's answer and for T9.6a landing on `main` at `13df252`.
 **Question this answers:** does v2 modify this codebase, or start fresh?
 **Date:** 2026-09-14
@@ -114,6 +114,7 @@ lines of working, tested dialogs and the twelve Qt test modules that cover them.
 | FR131 FR132 | new model-catalogue module: live fetch, curation, bundled fallback | New |
 | FR133 FR134 | catalogue filters per lane; model-not-found falls back for the run only, recorded to the ring, config untouched (D-U39) | New |
 | FR135 | a passive newer-model marker in the picker, suppressed on the bundled fallback list | New |
+| FR132a FR132b FR121a | `config.py` gains editable floors, per-lane defaults and a distillation level, all under its existing forward-only migration | Change, config |
 
 **STT provider choice needs nothing.** `stt/interface.py`, the three backends, `FallbackSttBackend`
 and the settings control all shipped under FR17, FR18 and FR21. The LLM half should copy that shape

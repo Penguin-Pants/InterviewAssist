@@ -2,7 +2,7 @@
 
 **Status:** Feature request. Not a build plan.
 **Date:** 2026-09-14
-**Revision:** 8. Each revision was reviewed against the codebase rather than against the progress
+**Revision:** 9. Each revision was reviewed against the codebase rather than against the progress
 log. Revision 1 had eleven confirmed errors, revision 2 had ten. Revision 4 answers OQ-14 and
 corrects two claims that `main` overtook. §11, §12 and §13 record every change, so the corrections
 are not silently absorbed.
@@ -132,6 +132,8 @@ Continuing `docs/implementation/00-decisions-and-assumptions.md`. D-U13 is the l
 | **D-U39** | **A catalogue refresh never changes a lane's saved model. Only the user does.** | FR134's fallback is therefore **runtime-only and never written to config**: a lane whose model is briefly unavailable falls back for that run, reports it, and resumes on the saved model when the provider serves it again. Writing the fallback to disk would turn a transient outage into a permanent silent downgrade. |
 | **D-U40** | **The Anthropic floor is a per-family minimum, not a date cutoff: Opus 4.7 and later, Sonnet 4.5 and later.** | **A date cutoff would be wrong here.** Sonnet 4.5 was released before Opus 4.7, so any single date that admits Opus 4.7 excludes Sonnet 4.5, and any date that admits Sonnet 4.5 also admits Opus models the floor is meant to hide. The floor is expressed as one minimum per family, and a family the floor does not name is admitted on its own merits rather than blocked by default. |
 | **D-U41** | **A newer model is signalled by a passive marker in the picker, and nowhere else.** No notification, no dialog, no badge, nothing outside the settings surface. | Answers OQ-24 and completes D-U39: if nothing auto-upgrades, the user needs a way to notice, and the quietest one that works is a mark beside the model they are already looking at. The marker never prompts and never preselects. |
+| **D-U42** | **The floors, the per-lane model defaults and the distillation setting are all configuration, not constants.** They ship with defaults and the user may change every one. | Extends D-9, which already made the model id configuration. It also stops the floors going stale on the day a new generation ships: a floor written into the build is wrong the moment the world moves, and a floor in config is not. |
+| **D-U43** | **One guarantee is not configurable: FR127's decode-time constraint on the selector.** Everything else in D-U42 may be overridden. | This is the line, and it is worth stating rather than assuming. Lowering a floor changes which models are *offered*; it must never change whether the selector's output is *constrained*. A setting that let the selector run on a model with no decode-time enforcement would turn FR10's structural guarantee into a prompt request, silently, with nothing on screen to say the product stopped being what it claims. FR124's preference against Haiku-tier models for analysis **is** overridable, because it is a quality preference. FR127 is not, because it is a correctness property. |
 | **D-U26** | **The suggest lane is its own package (`suggest/`) rendered by its own module (`ui/suggest_panel.py`).** `report/separation.py` is generalised and a second assertion added, so recall cannot import suggest and vice versa. | The existing wall is a static import check between a package and a module. It cannot see inside one module, so two lanes in `ui/overlay.py` would be unenforceable. Splitting the modules makes the mechanism that already works apply unchanged. |
 
 ---
@@ -162,6 +164,7 @@ FR1 to FR87 are taken. Numbering starts at FR90.
 | **FR118** | The index for a company is the **union of its per-set indexes**. Editing one set re-embeds that set alone. No merged index file is created, because `index/<set_id>.<model>.npz` is already the right granularity and a merged file would re-embed everything on every edit. |
 | **FR119** | After an interview, its transcript is **conservatively distilled** into chunks and added to the company's retrieval scope (D-U30). Distillation removes filler, false starts, verbatim repetition and backchannel, and **nothing else**. Every factual claim, name, number, date, commitment, and question asked is retained. When in doubt the material is kept. |
 | **FR120** | Each distilled chunk **cites the utterance indices it came from**, on the FR78 principle, so it can be audited against the raw record and the user can jump back to what was actually said. A chunk that cannot cite its source is not written. |
+| **FR121a** | **Distillation aggressiveness is a user setting** (D-U42), on a scale whose **default is the most conservative** end: drop filler, false starts, verbatim repetition and backchannel, and nothing else. Raising it drops more, and the setting says plainly what each level gives up. Three properties hold at **every** level and are not part of the scale: every chunk still cites its utterances (FR120), the raw transcript is still never touched (FR121), and a chunk that cannot cite its source is still not written. The setting therefore cannot make the result unauditable, only shorter. |
 | **FR121** | **The raw transcript is never modified, replaced or deleted by distillation.** It stays in the encrypted session store under its existing retention rule (FR84). Distillation is additive. |
 | **FR122** | Distilled transcripts carry a new `SourceKind`, **`TRANSCRIPT`**, which is **not trackable** (FR70): things you said in a past interview are not talking points to cover in this one. Each past interview's distilled chunks are stored as their own read-only `ContextSet` in the company, named for the interview, so the existing store, index, prefilter and verify path all apply unchanged. |
 | **FR123** | `TRANSCRIPT` gets its own `KIND_TAU_OFFSET` entry, set **above** the user's floor rather than below it. Transcript material is recall support, not prepared content, and should clear a higher bar before it displaces a prep note. D-30's cap of two stage-2 candidates per kind applies to it unchanged. |
@@ -198,7 +201,7 @@ FR1 to FR87 are taken. Numbering starts at FR90.
 
 | ID | Requirement |
 |---|---|
-| **FR124** | **Model is configured per lane, not per app.** Report generation, transcript distillation, the suggest lane and the proactive engine default to **Sonnet 5 at high effort, or Opus 5**. None of them may be run on a Haiku-tier model (D-U31). |
+| **FR124** | **Model is configured per lane, not per app.** Report generation, transcript distillation, the suggest lane and the proactive engine default to **Sonnet 5 at high effort, or Opus 5**, and the picker does not offer Haiku-tier models for them (D-U31). This is a **quality preference and is overridable** through FR132a's "show everything" path, with the trade stated at the point of choosing. Contrast FR127, which is not overridable (D-U43). |
 | **FR125** | The **stage-2 selector** keeps a fast model as its default, as the single exception to FR124, and the exception is **time-boxed**: it is re-decided once PR 2 reports real end-to-end latency. It classifies against a closed enum of at most five candidates and is the only call inside the live 2-3 second budget. |
 | **FR126** | **The model client is a provider Protocol** with an Anthropic implementation and an OpenAI implementation (D-U32). `KNOWN_ACCOUNTS` in `platform/credentials.py` gains `openai`. A key for either provider is optional and its absence degrades exactly as D-U12 already specifies. |
 | **FR127** | **A provider may host the stage-2 selector only if it can constrain the output structurally at decode time** (D-U33). Two mechanisms are verified: Anthropic's forced `tool_choice` with an enum schema, and OpenAI's `strict: true`, which masks invalid tokens to zero probability so an invalid enum value cannot be emitted. Prompt-only instruction to "answer with one id" does **not** satisfy this and may not be used. |
@@ -212,8 +215,9 @@ FR1 to FR87 are taken. Numbering starts at FR90.
 | **FR130** | **Every lane is assigned a provider and a model independently**: stage-2 selection, the suggest lane, the proactive engine, report generation, transcript distillation, and STT. Mixing is the expected case, not an edge case — for example Opus 5 for proactive suggestions and Deepgram for transcription. |
 | **FR131** | The model list is **fetched live from each configured provider** and cached. When no provider key is present, or the fetch fails, the app falls back to a **bundled list** and says which it is showing. The app must remain usable offline (D-U12), so the picker never blocks startup. |
 | **FR132** | The list is **curated before display**. Three rules: a **floor**, expressed as a minimum per model family rather than a cutoff date (D-U40); **non-conversational models are filtered out entirely**, because a provider's model endpoint also returns embedding, moderation and audio models that are not candidates for any lane here; and the remainder is sorted newest first. A **"show everything"** toggle reveals the unfiltered list for a user who wants a model the floor hides. |
-| **FR132a** | The floors are: **OpenAI** — nothing before GPT-5. **Anthropic** — Opus 4.7 and later, Sonnet 4.5 and later. A family neither floor names is admitted and judged by FR133's per-lane rules. **STT providers carry no floor**: each serves a small number of current models, so a floor would filter nothing. |
-| **FR133** | A lane only offers models it can actually use. The **stage-2 selector** offers only models whose provider can constrain output at decode time for that model (FR127) — notably excluding any model where forced tool use has been withdrawn — and the **analysis lanes** exclude Haiku-tier models per FR124. A model the lane cannot use is not shown for that lane rather than shown and then rejected. |
+| **FR132a** | The floors **ship as defaults and are user-editable** (D-U42), stored in `config.json` under the existing schema-versioned, forward-only migration. Shipped values: **OpenAI** — nothing before GPT-5. **Anthropic** — Opus 4.7 and later, Sonnet 4.5 and later. A family neither floor names is admitted and judged by FR133's per-lane rules. **STT providers carry no floor**: each serves a small number of current models, so a floor would filter nothing. Editing a floor changes which models are **offered** and never which constraints apply (D-U43). |
+| **FR132b** | Each lane's **default model is a setting**, not a constant baked into the build (D-U42). The app still ships an opinion for first run, because something has to be selected before the user has chosen; changing the default never rewrites a lane the user has already set (D-U39). |
+| **FR133** | A lane only offers models it can actually use. The **stage-2 selector** offers only models whose provider can constrain output at decode time for that model (FR127) — notably excluding any model where forced tool use has been withdrawn — and the **analysis lanes** exclude Haiku-tier models per FR124. A model the lane cannot use is not shown for that lane rather than shown and then rejected. **The selector's half of this filter survives every setting, including "show everything"** (D-U43): a floor is a preference, a decode-time guarantee is not. |
 | **FR135** | The picker shows a **passive marker** beside a lane whose family has a newer model than the one saved (D-U41). It is informational: it never prompts, never preselects, and appears on no surface other than the picker. **It is suppressed while the bundled fallback list is in use** (FR131), because a stale list can as easily invent a newer model as miss one, and a marker that is sometimes wrong is worse than none. |
 | **FR134** | **A configured model that is no longer served is a handled state, not a crash.** On a model-not-found error the app names the model, says it is unavailable, and falls back to that lane's default for that run, recording it to the diagnostics ring. **The saved configuration is not rewritten** (D-U39): if the model is served again, the lane resumes on it without the user touching anything. Only the user changes a lane's saved model. |
 
@@ -369,7 +373,7 @@ rough and are for ordering, not for planning.
 | **13. Report extension** | FR106, plus moving the report off Haiku per FR124 | **An API key.** T4.7 has never run against one | S |
 | **16. Transcript distillation** | FR119 to FR123, the `TRANSCRIPT` kind, schema v3, the distiller | **Judge the output on a real transcript** (OQ-21). Only you can say whether it dropped something that mattered | M |
 | **17. Provider abstraction** | FR126 to FR128, Anthropic and OpenAI implementations, refusal paths | **An OpenAI key** to verify the second implementation | M |
-| **18. Model catalogue and picker** | FR130 to FR134, live fetch, curation, bundled fallback, per-lane assignment UI | **Confirm the per-provider floors** (FR132) and sanity-check the list against what you actually want offered | M |
+| **18. Model catalogue and picker** | FR130 to FR135, live fetch, curation, bundled fallback, per-lane assignment UI, editable floors and defaults (FR132a, FR132b), and the FR127 filter that survives them | Set the floors and defaults to taste once it runs | M |
 | **14. Platform seam** | FR110 Protocols | — | **L, and growing** |
 | **15. Packaging** | PyInstaller build, installer script, **re-run PR 1's first-run download against the packaged build** | **Buy a code-signing certificate.** Needs a legal identity and money | M + purchase |
 
@@ -435,9 +439,9 @@ it is named rather than discovered.
 
 | ID | Question | Owner | Blocks |
 |---|---|---|---|
-| **OQ-12** | ~~Which model serves the suggest lane?~~ **Narrowed by D-U31: Sonnet 5 at high effort or Opus 5.** What remains is which of those two, and whether streaming closes the latency gap | Needs PR 2's latency numbers | PR 11 |
-| **OQ-20** | Does the stage-2 selector stay on a fast model, or move up with everything else (FR125)? | Needs PR 2's latency numbers | Re-decide after PR 2 |
-| **OQ-21** | How aggressive is "conservative" distillation in practice? The rule is written; the ratio it produces on a real 45-minute interview is unmeasured | You, on a real transcript | PR 16 |
+| ~~**OQ-12**~~ | **RESOLVED 2026-09-14 by D-U42: it is a setting.** Sonnet 5 at high effort ships as the default; you change it. PR 2's latency numbers now inform the shipped default rather than block a decision | — | Answered |
+| ~~**OQ-20**~~ | **RESOLVED 2026-09-14 by D-U42: it is a setting**, subject to FR133's filter, which is not (D-U43). PR 2 informs the default | — | Answered |
+| ~~**OQ-21**~~ | **RESOLVED 2026-09-14 by D-U42: it is a setting** (FR121a), defaulting to the most conservative end. A real transcript now tunes a dial rather than settling a requirement | — | Answered |
 | ~~**OQ-22**~~ | **RESOLVED 2026-09-14.** OpenAI: nothing before GPT-5. Anthropic: Opus 4.7 and later, Sonnet 4.5 and later, as per-family minimums (D-U40). STT providers: no floor. Became FR132a | — | Answered |
 | ~~**OQ-23**~~ | **RESOLVED 2026-09-14: never.** A refresh never changes a saved model, and FR134's fallback is runtime-only (D-U39) | — | Answered |
 | ~~**OQ-24**~~ | **RESOLVED 2026-09-14: a passive marker in the picker, no notification.** Became D-U41 and FR135 | — | Answered |
@@ -724,3 +728,39 @@ design gives them.
 
 That closes every open question raised in this document except the three that need measurement:
 OQ-12 and OQ-20 wait on PR 2's latency numbers, and OQ-21 waits on a real transcript.
+
+---
+
+## 18. What changed in revision 9
+
+The floors, the per-lane model defaults and the distillation setting all become configuration
+(D-U42). They ship with defaults and you change any of them, stored in `config.json` under the
+schema-versioned, forward-only migration the config store already has.
+
+This closes three open questions by turning them from decisions the plan had to make into settings
+you adjust. **PR 2's latency numbers now inform a shipped default rather than block a requirement**,
+which is a better place for them to sit: a measurement should tune a dial, not gate a document.
+
+### The one thing that is not configurable
+
+**D-U43 draws the line, and it is worth stating rather than assuming.**
+
+Lowering a floor changes which models are **offered**. It must never change whether the selector's
+output is **constrained**. A setting that let the stage-2 selector run on a model with no
+decode-time enforcement would turn FR10's structural guarantee into a prompt request — silently,
+with nothing on screen to say the product had stopped being what it claims.
+
+So the two look similar and are not:
+
+| Rule | Kind | Overridable |
+|---|---|---|
+| Model floors (FR132a) | Preference about age | **Yes** |
+| No Haiku-tier for analysis (FR124) | Preference about quality | **Yes**, with the trade stated |
+| Per-lane defaults (FR132b) | Preference about starting point | **Yes** |
+| Distillation aggressiveness (FR121a) | Preference about compression | **Yes** |
+| Decode-time constraint on the selector (FR127) | **Correctness property** | **No** |
+
+The distillation setting has the same shape internally. Three things hold at every level of the
+scale and are not part of it: every chunk cites its utterances, the raw transcript is never touched,
+and an uncitable chunk is never written. **The setting can make the result shorter. It cannot make
+it unauditable.**
