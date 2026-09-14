@@ -1,6 +1,6 @@
 # v2 Requirements Mapped to the Existing Codebase
 
-**Companion to:** `v2-feature-request.md` (revision 5).
+**Companion to:** `v2-feature-request.md` (revision 6).
 **Updated:** 2026-09-14 for OQ-14's answer and for T9.6a landing on `main` at `13df252`.
 **Question this answers:** does v2 modify this codebase, or start fresh?
 **Date:** 2026-09-14
@@ -60,7 +60,7 @@ Measured, not estimated.
 
 | Package | Lines | v2 verdict | What happens |
 |---|---|---|---|
-| `stt/` | 1,834 | **Untouched** | The backend Protocol and its conformance suite already do what v2 needs |
+| `stt/` | 1,834 | **Untouched** | The backend Protocol, three implementations, the automatic fallback and the conformance suite already do what v2 needs. This package is the model for how the LLM provider seam should look |
 | `audio/` | 792 | **Untouched** | Windows capture is the requirement (D-U15), not a liability. Still needs M1 validation, which is PR 2 and predates v2 |
 | `session/` | 680 | **One hook** | `PurgeHooks` gains a sixth field, `_purge` a sixth tuple entry (FR112) |
 | `matching/` | 714 | **Changed, still additive** | Stage 1 and stage 2 keep their logic. `Prefilter` takes a list of sets instead of one (FR117), `KIND_TAU_OFFSET` gains a row (FR123), and `MessagesClient` generalises into the provider Protocol (FR126). The suggest lane still runs beside them, walled by FR113 |
@@ -110,6 +110,13 @@ lines of working, tested dialogs and the twelve Qt test modules that cover them.
 | FR124 FR125 | `config.py` gains a model per lane; `selector.py` and `generator.py` defaults | Change, config |
 | FR126 FR127 FR128 | `matching/selector.py` `MessagesClient` -> provider Protocol; new OpenAI client; `platform/credentials.py` `KNOWN_ACCOUNTS` | Change, additive |
 | FR129 | `suggest/` request construction, plus a diagnostics-ring counter for cold-cache detection | New |
+| FR130 | `config.py` per-lane provider and model, replacing one `llm_model_id`; `ui/settings.py` pickers | Change, migration |
+| FR131 FR132 | new model-catalogue module: live fetch, curation, bundled fallback | New |
+| FR133 FR134 | catalogue filters per lane; model-not-found falls back and is recorded to the ring | New |
+
+**STT provider choice needs nothing.** `stt/interface.py`, the three backends, `FallbackSttBackend`
+and the settings control all shipped under FR17, FR18 and FR21. The LLM half should copy that shape
+rather than introduce a second one.
 | FR94 | `report/store.py` session record; `_reindex` carries it | Change, small |
 | FR95 | company editor writes `INTERVIEWER` chunks through the existing `ContextSet` path | New |
 | FR96 FR97 FR98 | `notes/importer.py`, `ui/import_notes.py` | Change, additive |

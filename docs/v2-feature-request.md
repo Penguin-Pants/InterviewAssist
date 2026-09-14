@@ -2,7 +2,7 @@
 
 **Status:** Feature request. Not a build plan.
 **Date:** 2026-09-14
-**Revision:** 5. Each revision was reviewed against the codebase rather than against the progress
+**Revision:** 6. Each revision was reviewed against the codebase rather than against the progress
 log. Revision 1 had eleven confirmed errors, revision 2 had ten. Revision 4 answers OQ-14 and
 corrects two claims that `main` overtook. §11, §12 and §13 record every change, so the corrections
 are not silently absorbed.
@@ -126,6 +126,9 @@ Continuing `docs/implementation/00-decisions-and-assumptions.md`. D-U13 is the l
 | **D-U33** | **FR10's guarantee is restated provider-agnostically: the selector's output must be constrained by the decoder, not by the prompt.** Two mechanisms are verified as satisfying it. | Anthropic: forced `tool_choice` with an enum schema. OpenAI: `strict: true`, which uses constrained decoding — after each token the engine masks invalid tokens to probability zero, so an invalid enum value cannot be produced. **A provider without such a mechanism may not host the selector**, because the guarantee would silently degrade into a prompt request. Note that forced tool use is *removed* on Claude Fable 5.1, which returns a 400, so that model would need the `strict` route instead. |
 | **D-U34** | **The suggest lane caches its stable prefix at the default 5-minute TTL.** Never the 1-hour TTL. | Resume, job ad and company research are byte-identical for a whole interview; the utterance and conversation state go after the breakpoint. A cache read refreshes the timer for free and calls land roughly every 30 seconds, so the 5-minute entry stays warm for the session. The 1-hour TTL costs a 2× write and buys nothing here. |
 | **D-U35** | **Adding the transcript kind bumps `ContextSet` to schema v3, with a no-op migration.** | **This amends D-U24.** That decision said note-set files stay at v2, and the *container* part of it holds — a company still is not stored in the note-set file. But a new `SourceKind` member is a schema concern: an older build reading a file containing it raises `NoteSetCorruptError` through `SourceKind(...)`. Bumping the version makes it raise `SchemaTooNewError` instead, which is the refusal the store already has for exactly this. |
+| **D-U36** | **Provider and model are chosen per lane, and the STT choice is independent of every LLM choice.** Opus 5 for proactive work alongside Deepgram for transcription is a supported combination, not a special case. | STT already works this way: `SttBackend` is a Protocol with three implementations and an automatic fallback. This decision extends the same shape to the LLM lanes rather than inventing a second pattern. |
+| **D-U37** | **The model list is fetched live from each provider and curated before it is shown.** Model ids are never hardcoded. | Extends D-9, which already made the Anthropic model id configuration rather than a constant. Anthropic's Models API returns id, display name, creation date and a `capabilities` field; OpenAI has an equivalent endpoint. A bundled list ships as the offline fallback, because D-U12 requires the app to start with no network. |
+| **D-U38** | **There is no text-to-speech in this product.** | Recorded as a decision rather than an omission so it does not drift back in. The product listens and displays; it never emits audio. Any future audio output would be captured by the app's own loopback and mic streams, so it would need echo suppression against itself before it could be considered at all. |
 | **D-U26** | **The suggest lane is its own package (`suggest/`) rendered by its own module (`ui/suggest_panel.py`).** `report/separation.py` is generalised and a second assertion added, so recall cannot import suggest and vice versa. | The existing wall is a static import check between a package and a module. It cannot see inside one module, so two lanes in `ui/overlay.py` would be unenforceable. Splitting the modules makes the mechanism that already works apply unchanged. |
 
 ---
@@ -199,6 +202,16 @@ FR1 to FR87 are taken. Numbering starts at FR90.
 | **FR128** | **Both providers can refuse a request**, and a refusal is not an error to swallow. The suggest lane treats a refusal as FR102's no-content case and states it in one line. The selector treats it as a stage-2 failure and falls back per D-U3. Note that OpenAI's strict mode constrains the schema but does **not** suppress refusals. |
 | **FR129** | The suggest lane **caches its stable prefix** — resume, job ad, company research — at the default 5-minute TTL, with the utterance and conversation state placed after the cache breakpoint (D-U34). The app **verifies the cache is working** by checking that cached-read tokens are non-zero across a session, and records the result to the diagnostics ring; a silently cold cache is a cost bug that reports no error. |
 
+### 4.4b Choosing providers and models
+
+| ID | Requirement |
+|---|---|
+| **FR130** | **Every lane is assigned a provider and a model independently**: stage-2 selection, the suggest lane, the proactive engine, report generation, transcript distillation, and STT. Mixing is the expected case, not an edge case — for example Opus 5 for proactive suggestions and Deepgram for transcription. |
+| **FR131** | The model list is **fetched live from each configured provider** and cached. When no provider key is present, or the fetch fails, the app falls back to a **bundled list** and says which it is showing. The app must remain usable offline (D-U12), so the picker never blocks startup. |
+| **FR132** | The list is **curated before display**. Three rules: a **per-provider floor** hides superseded generations (for OpenAI, nothing before GPT-5); **non-conversational models are filtered out entirely**, because a provider's model endpoint also returns embedding, moderation and audio models that are not candidates for any lane here; and the remainder is sorted newest first. A **"show everything"** toggle reveals the unfiltered list for a user who wants a model the floor hides. |
+| **FR133** | A lane only offers models it can actually use. The **stage-2 selector** offers only models whose provider can constrain output at decode time for that model (FR127) — notably excluding any model where forced tool use has been withdrawn — and the **analysis lanes** exclude Haiku-tier models per FR124. A model the lane cannot use is not shown for that lane rather than shown and then rejected. |
+| **FR134** | **A configured model that is no longer served is a handled state, not a crash.** On a model-not-found error the app names the model, says it is unavailable, and falls back to that lane's default, recording it to the diagnostics ring. A saved configuration outlives the model it names. |
+
 ### 4.5 Product surface
 
 | ID | Requirement |
@@ -220,6 +233,7 @@ FR1 to FR87 are taken. Numbering starts at FR90.
 - **No video capture, ever.** Audio only. Not a scope call; it is what the product is.
 - **No speaker diarization.** Stream separation plus echo detection stands (D-8, AS-5).
 - **No use in someone else's interview.** Unchanged.
+- **No text-to-speech, and no audio output of any kind** (D-U38).
 - **No single overall interview score.** The report stays descriptive with evidence.
 
 ---
@@ -305,6 +319,9 @@ session can be read or written off-platform. It is listed in §8 as such.
 | new distiller | Post-interview, offline, one call per interview. Reads the session record, writes a read-only `ContextSet` of `TRANSCRIPT` chunks | Loss-aversion is the whole specification (FR119). It is easier to write a distiller that summarises well than one that drops nothing important |
 | `notes/model.py` | One new `SourceKind` member, and `SCHEMA_VERSION` to 3 with a no-op migration (D-U35) | This is the one place v2 touches `model.py`, and D-U24's "stays at v2" is amended rather than quietly broken |
 | `platform/credentials.py` | `KNOWN_ACCOUNTS` gains `openai` | One line, but it is the seam the second provider hangs from |
+| new model catalogue | Fetches and caches each provider's model list, applies FR132's curation, ships a bundled fallback | The curation is the substance. An uncurated provider listing includes embedding, moderation and audio models, which are not candidates for any lane here |
+| `config.py` | A provider and model per lane (FR130), replacing the single `llm_model_id` | Forward-only migration, as the store already does. An old config names one model; the new one names six |
+| `ui/settings.py` | Per-lane provider and model pickers beside the existing STT backend choice | The STT half of this already exists and should be the pattern the LLM half copies, not a second one |
 | `report/separation.py` | Generalised from one hardcoded pair to a checkable rule, then given FR113's second pair | It is the only structural guarantee in the product. Changing it needs its own tests first |
 | `session/` | Owns `ConversationState` (FR103), cleared by a sixth purge hook (FR112) | `PurgeHooks` is a frozen dataclass and `_purge` iterates a hardcoded tuple whose order is FR59. Both change together, and FR59's text changes with them |
 | new `proactive/` | Detectors for FR104 and FR105. Each returns a cited prompt or nothing | Rate limiting and the never-interrupt rule live here, not in the UI |
@@ -347,6 +364,7 @@ rough and are for ordering, not for planning.
 | **13. Report extension** | FR106, plus moving the report off Haiku per FR124 | **An API key.** T4.7 has never run against one | S |
 | **16. Transcript distillation** | FR119 to FR123, the `TRANSCRIPT` kind, schema v3, the distiller | **Judge the output on a real transcript** (OQ-21). Only you can say whether it dropped something that mattered | M |
 | **17. Provider abstraction** | FR126 to FR128, Anthropic and OpenAI implementations, refusal paths | **An OpenAI key** to verify the second implementation | M |
+| **18. Model catalogue and picker** | FR130 to FR134, live fetch, curation, bundled fallback, per-lane assignment UI | **Confirm the per-provider floors** (FR132) and sanity-check the list against what you actually want offered | M |
 | **14. Platform seam** | FR110 Protocols | — | **L, and growing** |
 | **15. Packaging** | PyInstaller build, installer script, **re-run PR 1's first-run download against the packaged build** | **Buy a code-signing certificate.** Needs a legal identity and money | M + purchase |
 
@@ -415,6 +433,8 @@ it is named rather than discovered.
 | **OQ-12** | ~~Which model serves the suggest lane?~~ **Narrowed by D-U31: Sonnet 5 at high effort or Opus 5.** What remains is which of those two, and whether streaming closes the latency gap | Needs PR 2's latency numbers | PR 11 |
 | **OQ-20** | Does the stage-2 selector stay on a fast model, or move up with everything else (FR125)? | Needs PR 2's latency numbers | Re-decide after PR 2 |
 | **OQ-21** | How aggressive is "conservative" distillation in practice? The rule is written; the ratio it produces on a real 45-minute interview is unmeasured | You, on a real transcript | PR 16 |
+| **OQ-22** | What exactly is each provider's floor (FR132)? OpenAI is settled at "nothing before GPT-5". Anthropic's and the STT providers' floors are not | You | PR 18 |
+| **OQ-23** | How often is the live model list refreshed, and does a refresh ever change a lane's saved model on its own? The safe answer is never without asking, but it means a user can sit on a retired model until FR134 fires | Design, then you | PR 18 |
 | **OQ-13** | Does the suggest lane need its own confidence floor, or does it inherit the prefilter's τ? | Design | PR 11 |
 | ~~**OQ-14**~~ | **RESOLVED 2026-09-14: many documents.** Became D-U27, D-U28, FR93, FR115 and FR116 | — | Answered |
 | **OQ-15** | How do a proactive alert and a recall snippet share the overlay when both fire? | Design | PR 12 |
@@ -592,3 +612,51 @@ that only shows up on the third interview at a company, when nothing from the fi
 - The stage-2 selector is **not** cached: its prefix is a few hundred tokens and changes every
   utterance. This is also where the Haiku floor bites — 4,096 tokens minimum to cache on Haiku 4.5
   against 1,024 on Sonnet 5 and 512 on Opus 5 — which is a second, independent argument for FR124.
+
+---
+
+## 15. What changed in revision 6
+
+One clarification, and it turned out that a third of it was already built.
+
+### Already built: STT provider choice
+
+`stt/interface.py` defines `SttBackend` as a Protocol. `DeepgramBackend`, `ElevenLabsBackend` and
+`LocalWhisperBackend` all implement it, `FallbackSttBackend` degrades automatically when a cloud
+backend drops (FR21), a conformance suite lets a fourth backend inherit every test, and
+`ui/settings.py` already offers the backend choice. FR17 and FR18 specified this in v1 and it
+shipped. **Nothing to build; the work is to keep the LLM half consistent with it rather than
+inventing a second pattern.**
+
+### New: per-lane assignment
+
+- **D-U36, FR130.** Provider and model are chosen per lane, and the STT choice is independent of
+  every LLM choice. Opus 5 for proactive suggestions alongside Deepgram for transcription is an
+  ordinary configuration, not a special case.
+- `config.py`'s single `llm_model_id` becomes a provider and model per lane, through the
+  forward-only migration the config store already has.
+
+### New: a live, curated model catalogue
+
+- **D-U37, FR131.** The list is fetched live. Anthropic's Models API returns id, display name,
+  creation date and a `capabilities` field; OpenAI has an equivalent endpoint. A bundled list is the
+  offline fallback, because D-U12 requires the app to start with no network, and the app says which
+  list it is showing.
+- **FR132.** Curation is the substance, not a nicety. A provider's raw model endpoint returns
+  embedding, moderation and audio models alongside the conversational ones, so filtering is
+  mandatory rather than cosmetic. Three rules: a per-provider floor (OpenAI: nothing before GPT-5),
+  drop non-conversational models entirely, sort newest first. A "show everything" toggle exists for
+  anyone who wants a model the floor hides.
+- **FR133.** A lane only offers models it can use. The selector offers only models whose provider
+  can constrain output at decode time for that model (FR127) — which excludes any model where forced
+  tool use has been withdrawn — and the analysis lanes exclude Haiku-tier models (FR124). Filtering
+  at the picker beats accepting a choice and then refusing it at runtime.
+- **FR134.** A saved configuration outlives the model it names. A model that is no longer served is
+  named, reported, and falls back to the lane's default rather than crashing.
+
+### Settled: no text-to-speech
+
+**D-U38.** Recorded as a decision rather than left as an omission. The product listens and displays;
+it never emits audio. Worth writing down because any future audio output would be picked up by the
+app's own loopback and mic capture and would need echo suppression against itself before it could
+even be discussed.
