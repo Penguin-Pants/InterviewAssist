@@ -5,5 +5,6 @@
   "scaffold_id": "f2cff086-2fd1-4083-94eb-b775eb91ad79",
   "scaffold_name": "InterviewAssist",
   "origin": null,
-  "upstream": null
+  "upstream": null,
+  "setupMode": "code-repo"
 }

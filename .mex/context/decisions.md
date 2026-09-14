@@ -19,7 +19,7 @@ edges:
 # Decisions usually ground sparsely; add only symbols that implement the decision.
 # Entry shape: { node: "function:<tier-1-id>", fingerprint: "mh:64:<hex>" }
 grounds_to: []
-last_updated: 2026-08-16
+last_updated: 2026-09-14
 ---
 
 # Decisions
@@ -39,6 +39,12 @@ last_updated: 2026-08-16
 
 ## Decision Log
 
+<!-- mex:entity
+id: mx_01M2GHK6W5TTKPNYG5EGCJK661
+type: decision
+status: promoted
+revision: 1
+-->
 ### Local-first speech-to-text with cloud fallback
 **Date:** 2024-06-01 (from git history: initial architecture)
 **Status:** Active
@@ -47,6 +53,12 @@ last_updated: 2026-08-16
 **Alternatives considered:** OpenAI API only (rejected — requires internet, higher cost for continuous transcription). Local-only without cloud (rejected — no recovery path for hardware failures or performance issues).
 **Consequences:** Must maintain STT protocol abstraction so backends are swappable. Requires GPU or CPU capacity on device. Tests use a fake Transcriber Protocol, not real models.
 
+<!-- mex:entity
+id: mx_01M2GHK6V6YWYRTFHFX2RSXEMQ
+type: decision
+status: promoted
+revision: 1
+-->
 ### File-based storage instead of database server
 **Date:** 2024-05-15
 **Status:** Active
@@ -55,6 +67,12 @@ last_updated: 2026-08-16
 **Alternatives considered:** SQLite (rejected — adds schema versioning burden). PostgreSQL (rejected — overkill for single user, complicates deployment). Cloud storage (rejected — relies on network, session restore would be slow).
 **Consequences:** No transactions across files. Concurrent writes from same process don't happen (no worker threads). Backup/restore is straightforward: cp -r appdata to external drive.
 
+<!-- mex:entity
+id: mx_01M2GHK6T6K247VQ7GV1TKX6Q1
+type: decision
+status: promoted
+revision: 1
+-->
 ### PySide6 for cross-platform GUI with Windows-specific overlays
 **Date:** 2024-04-01
 **Status:** Active
@@ -63,6 +81,12 @@ last_updated: 2026-08-16
 **Alternatives considered:** PyQt5 (rejected — licensing ambiguity). tkinter (rejected — too basic for complex overlays). WPF/.NET (rejected — limits to Windows, blocks dev on Linux).
 **Consequences:** Windows-only modules use `type: ignore[attr-defined]` for ctypes.windll. Type-checking diverges by platform; CI runs mypy on Windows. Tests run on Linux with QT_QPA_PLATFORM=offscreen.
 
+<!-- mex:entity
+id: mx_01M2GHK6S8FZX6RE0T9GCM5ZRP
+type: decision
+status: promoted
+revision: 1
+-->
 ### Dependency injection for STT backends, not factory functions
 **Date:** 2024-03-20
 **Status:** Active

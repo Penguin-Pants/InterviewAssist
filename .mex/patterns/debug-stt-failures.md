@@ -17,7 +17,23 @@ edges:
   - target: context/setup.md
     condition: when checking environment setup for audio and dependencies
 grounds_to: []
-last_updated: 2026-08-16
+last_updated: 2026-09-14
+mex:
+  id: mx_01M2GHK75AQGCY3QF6MGQCPNNS
+  type: pattern
+  status: promoted
+  revision: 4
+  title: debug-stt-failures
+  relations:
+    - type: related_to
+      target: mx_01M2GHK6K4BGKA2Q2EW93N325R
+      note: when tracing audio flow from capture through transcription
+    - type: related_to
+      target: mx_01M2GHK732WM2K9M8X4YEGG692
+      note: when implementing retry logic or backend switching
+    - type: related_to
+      target: mx_01M2GHK7217V9ZHS642K56CH00
+      note: when checking environment setup for audio and dependencies
 ---
 
 # Debug STT Failures

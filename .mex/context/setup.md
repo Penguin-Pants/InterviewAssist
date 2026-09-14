@@ -18,7 +18,20 @@ edges:
 # Ground only setup behavior implemented by specific code symbols.
 # Entry shape: { node: "function:<tier-1-id>", fingerprint: "mh:64:<hex>" }
 grounds_to: []
-last_updated: 2026-08-16
+last_updated: 2026-09-14
+mex:
+  id: mx_01M2GHK7217V9ZHS642K56CH00
+  type: guide
+  status: promoted
+  revision: 3
+  title: setup
+  relations:
+    - type: related_to
+      target: mx_01M2GHK6K4BGKA2Q2EW93N325R
+      note: when understanding how components connect during setup
+    - type: related_to
+      target: mx_01M2GHK75AQGCY3QF6MGQCPNNS
+      note: when troubleshooting setup issues with audio or transcription
 ---
 
 # Setup
@@ -29,12 +42,24 @@ last_updated: 2026-08-16
 ```
 -->
 
+<!-- mex:entity
+id: mx_01M2GHK7114RPW9N31VV0Z7Z88
+type: guide
+status: promoted
+revision: 1
+-->
 ## Prerequisites
 
 - **Python 3.11+** (3.12 for type checking) — on Windows, use official installer or `winget install Python.Python.3.12`.
 - **pip** (usually bundled with Python) — `python -m pip install --upgrade pip`.
 - **Windows 10/11** (for shipping, but dev/CI can run on Linux with caveats) — audio capture and WASAPI are Windows-only; UI runs on Linux with QT_QPA_PLATFORM=offscreen.
 
+<!-- mex:entity
+id: mx_01M2GHK700K2FTB99M8ZQ22T5H
+type: guide
+status: promoted
+revision: 1
+-->
 ## First-time Setup
 
 1. Clone the repo: `git clone <repo-url> && cd interview-prep-recall`
@@ -45,6 +70,12 @@ last_updated: 2026-08-16
 6. Type-check: `mypy interview_prep_recall` (runs with python_version=3.12 even if dev container is 3.11; ignores warnings for Windows-only modules on non-Windows)
 7. Lint: `ruff check .` (line-length 100, target Python 3.11+)
 
+<!-- mex:entity
+id: mx_01M2GHK6Z0HV7XQCA2J5DPE8KM
+type: guide
+status: promoted
+revision: 1
+-->
 ## Environment Variables
 
 - `ANTHROPIC_API_KEY` (optional) — only if using cloud transcription. Not required if local Whisper available.
@@ -52,6 +83,12 @@ last_updated: 2026-08-16
 
 No .env files — all configuration is runtime or stored in the notes store.
 
+<!-- mex:entity
+id: mx_01M2GHK6Y2N0M365JEXV55551Z
+type: guide
+status: promoted
+revision: 1
+-->
 ## Common Commands
 
 - `pytest` — run full test suite (skips device/windows markers on non-Windows)
@@ -61,6 +98,12 @@ No .env files — all configuration is runtime or stored in the notes store.
 - `ruff check . && ruff format .` — lint and format (line-length 100, no docs/ directory)
 - `python -m interview_prep_recall` — run the app (Windows only; Linux needs QT_QPA_PLATFORM=offscreen and will fail on WASAPI loopback)
 
+<!-- mex:entity
+id: mx_01M2GHK6X4JWX3HV9N0PM6KHDE
+type: guide
+status: promoted
+revision: 1
+-->
 ## Common Issues
 
 **Import errors for optional dependencies (ui, windows, embeddings, cloud):** These extras are optional. Install the specific extra: `pip install -e ".[ui]"` for PySide6, etc. Tests skip unavailable features gracefully via fixture markers.
