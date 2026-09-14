@@ -2,7 +2,7 @@
 
 **Status:** Feature request. Not a build plan.
 **Date:** 2026-09-14
-**Revision:** 6. Each revision was reviewed against the codebase rather than against the progress
+**Revision:** 7. Each revision was reviewed against the codebase rather than against the progress
 log. Revision 1 had eleven confirmed errors, revision 2 had ten. Revision 4 answers OQ-14 and
 corrects two claims that `main` overtook. §11, §12 and §13 record every change, so the corrections
 are not silently absorbed.
@@ -129,6 +129,8 @@ Continuing `docs/implementation/00-decisions-and-assumptions.md`. D-U13 is the l
 | **D-U36** | **Provider and model are chosen per lane, and the STT choice is independent of every LLM choice.** Opus 5 for proactive work alongside Deepgram for transcription is a supported combination, not a special case. | STT already works this way: `SttBackend` is a Protocol with three implementations and an automatic fallback. This decision extends the same shape to the LLM lanes rather than inventing a second pattern. |
 | **D-U37** | **The model list is fetched live from each provider and curated before it is shown.** Model ids are never hardcoded. | Extends D-9, which already made the Anthropic model id configuration rather than a constant. Anthropic's Models API returns id, display name, creation date and a `capabilities` field; OpenAI has an equivalent endpoint. A bundled list ships as the offline fallback, because D-U12 requires the app to start with no network. |
 | **D-U38** | **There is no text-to-speech in this product.** | Recorded as a decision rather than an omission so it does not drift back in. The product listens and displays; it never emits audio. Any future audio output would be captured by the app's own loopback and mic streams, so it would need echo suppression against itself before it could be considered at all. |
+| **D-U39** | **A catalogue refresh never changes a lane's saved model. Only the user does.** | FR134's fallback is therefore **runtime-only and never written to config**: a lane whose model is briefly unavailable falls back for that run, reports it, and resumes on the saved model when the provider serves it again. Writing the fallback to disk would turn a transient outage into a permanent silent downgrade. |
+| **D-U40** | **The Anthropic floor is a per-family minimum, not a date cutoff: Opus 4.7 and later, Sonnet 4.5 and later.** | **A date cutoff would be wrong here.** Sonnet 4.5 was released before Opus 4.7, so any single date that admits Opus 4.7 excludes Sonnet 4.5, and any date that admits Sonnet 4.5 also admits Opus models the floor is meant to hide. The floor is expressed as one minimum per family, and a family the floor does not name is admitted on its own merits rather than blocked by default. |
 | **D-U26** | **The suggest lane is its own package (`suggest/`) rendered by its own module (`ui/suggest_panel.py`).** `report/separation.py` is generalised and a second assertion added, so recall cannot import suggest and vice versa. | The existing wall is a static import check between a package and a module. It cannot see inside one module, so two lanes in `ui/overlay.py` would be unenforceable. Splitting the modules makes the mechanism that already works apply unchanged. |
 
 ---
@@ -208,9 +210,10 @@ FR1 to FR87 are taken. Numbering starts at FR90.
 |---|---|
 | **FR130** | **Every lane is assigned a provider and a model independently**: stage-2 selection, the suggest lane, the proactive engine, report generation, transcript distillation, and STT. Mixing is the expected case, not an edge case — for example Opus 5 for proactive suggestions and Deepgram for transcription. |
 | **FR131** | The model list is **fetched live from each configured provider** and cached. When no provider key is present, or the fetch fails, the app falls back to a **bundled list** and says which it is showing. The app must remain usable offline (D-U12), so the picker never blocks startup. |
-| **FR132** | The list is **curated before display**. Three rules: a **per-provider floor** hides superseded generations (for OpenAI, nothing before GPT-5); **non-conversational models are filtered out entirely**, because a provider's model endpoint also returns embedding, moderation and audio models that are not candidates for any lane here; and the remainder is sorted newest first. A **"show everything"** toggle reveals the unfiltered list for a user who wants a model the floor hides. |
+| **FR132** | The list is **curated before display**. Three rules: a **floor**, expressed as a minimum per model family rather than a cutoff date (D-U40); **non-conversational models are filtered out entirely**, because a provider's model endpoint also returns embedding, moderation and audio models that are not candidates for any lane here; and the remainder is sorted newest first. A **"show everything"** toggle reveals the unfiltered list for a user who wants a model the floor hides. |
+| **FR132a** | The floors are: **OpenAI** — nothing before GPT-5. **Anthropic** — Opus 4.7 and later, Sonnet 4.5 and later. A family neither floor names is admitted and judged by FR133's per-lane rules. **STT providers carry no floor**: each serves a small number of current models, so a floor would filter nothing. |
 | **FR133** | A lane only offers models it can actually use. The **stage-2 selector** offers only models whose provider can constrain output at decode time for that model (FR127) — notably excluding any model where forced tool use has been withdrawn — and the **analysis lanes** exclude Haiku-tier models per FR124. A model the lane cannot use is not shown for that lane rather than shown and then rejected. |
-| **FR134** | **A configured model that is no longer served is a handled state, not a crash.** On a model-not-found error the app names the model, says it is unavailable, and falls back to that lane's default, recording it to the diagnostics ring. A saved configuration outlives the model it names. |
+| **FR134** | **A configured model that is no longer served is a handled state, not a crash.** On a model-not-found error the app names the model, says it is unavailable, and falls back to that lane's default for that run, recording it to the diagnostics ring. **The saved configuration is not rewritten** (D-U39): if the model is served again, the lane resumes on it without the user touching anything. Only the user changes a lane's saved model. |
 
 ### 4.5 Product surface
 
@@ -433,8 +436,9 @@ it is named rather than discovered.
 | **OQ-12** | ~~Which model serves the suggest lane?~~ **Narrowed by D-U31: Sonnet 5 at high effort or Opus 5.** What remains is which of those two, and whether streaming closes the latency gap | Needs PR 2's latency numbers | PR 11 |
 | **OQ-20** | Does the stage-2 selector stay on a fast model, or move up with everything else (FR125)? | Needs PR 2's latency numbers | Re-decide after PR 2 |
 | **OQ-21** | How aggressive is "conservative" distillation in practice? The rule is written; the ratio it produces on a real 45-minute interview is unmeasured | You, on a real transcript | PR 16 |
-| **OQ-22** | What exactly is each provider's floor (FR132)? OpenAI is settled at "nothing before GPT-5". Anthropic's and the STT providers' floors are not | You | PR 18 |
-| **OQ-23** | How often is the live model list refreshed, and does a refresh ever change a lane's saved model on its own? The safe answer is never without asking, but it means a user can sit on a retired model until FR134 fires | Design, then you | PR 18 |
+| ~~**OQ-22**~~ | **RESOLVED 2026-09-14.** OpenAI: nothing before GPT-5. Anthropic: Opus 4.7 and later, Sonnet 4.5 and later, as per-family minimums (D-U40). STT providers: no floor. Became FR132a | — | Answered |
+| ~~**OQ-23**~~ | **RESOLVED 2026-09-14: never.** A refresh never changes a saved model, and FR134's fallback is runtime-only (D-U39) | — | Answered |
+| **OQ-24** | How does the user learn a newer model exists, given that nothing auto-upgrades them? A passive marker in the picker is the cheap answer; a notice is the loud one | You | PR 18 |
 | **OQ-13** | Does the suggest lane need its own confidence floor, or does it inherit the prefilter's τ? | Design | PR 11 |
 | ~~**OQ-14**~~ | **RESOLVED 2026-09-14: many documents.** Became D-U27, D-U28, FR93, FR115 and FR116 | — | Answered |
 | **OQ-15** | How do a proactive alert and a recall snippet share the overlay when both fire? | Design | PR 12 |
@@ -660,3 +664,45 @@ inventing a second pattern.**
 it never emits audio. Worth writing down because any future audio output would be picked up by the
 app's own loopback and mic capture and would need echo suppression against itself before it could
 even be discussed.
+
+---
+
+## 16. What changed in revision 7
+
+Two answers, and one of them exposed a trap worth writing down.
+
+### A refresh never changes a saved model (D-U39)
+
+Settled: **only the user changes a lane's model.** The consequence needed spelling out, because
+FR134 as written could have quietly broken it. A model-not-found fallback is now **runtime-only and
+never written to config**. A lane whose model is briefly unavailable falls back for that run, says
+so, and **resumes on the saved model** once the provider serves it again.
+
+Persisting that fallback would turn a transient outage into a permanent silent downgrade — the user
+would come back to a lane running something they never chose, with nothing on screen to say when it
+changed.
+
+Follow-on question, OQ-24: since nothing auto-upgrades, the user needs some way to notice a newer
+model exists. A passive marker in the picker is the cheap answer.
+
+### The Anthropic floor is per family, not a date (D-U40, FR132a)
+
+"Nothing older than Opus 4.7 or Sonnet 4.5" cannot be implemented as a cutoff date, and the reason
+is worth recording so nobody simplifies it later:
+
+**Sonnet 4.5 was released before Opus 4.7.** So any single date that admits Opus 4.7 also excludes
+Sonnet 4.5, and any date that admits Sonnet 4.5 also admits the Opus models the floor exists to
+hide. A date cutoff gets this wrong in both directions at once.
+
+The floor is therefore one minimum per family:
+
+| Provider | Floor |
+|---|---|
+| OpenAI | Nothing before GPT-5 |
+| Anthropic | Opus 4.7 and later; Sonnet 4.5 and later |
+| A family neither names | Admitted, then judged by FR133's per-lane rules |
+| STT providers | No floor — each serves a small number of current models, so a floor would filter nothing |
+
+FR133 still applies on top: the selector lane hides any model whose provider cannot constrain output
+at decode time for it, and the analysis lanes hide Haiku-tier models per FR124. The floor decides
+what is old; FR133 decides what a given lane can actually use.
