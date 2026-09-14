@@ -24,6 +24,25 @@ edges:
 # Entry shape: { node: "function:<tier-1-id>", fingerprint: "mh:64:<hex>" }
 grounds_to: []
 last_updated: 2026-08-16
+mex:
+  id: mx_01M2GHK6K4BGKA2Q2EW93N325R
+  type: architecture
+  status: promoted
+  revision: 5
+  title: architecture
+  relations:
+    - type: related_to
+      target: mx_01M2GHK6R6GR8Z910CVXWDKJFK
+      note: when understanding how components communicate and share state
+    - type: related_to
+      target: mx_01M2GHK748V8AWHDRYGSWJC9XF
+      note: when adding a new UI component or integrating with MainWindow
+    - type: related_to
+      target: mx_01M2GHK732WM2K9M8X4YEGG692
+      note: when integrating a new transcription backend
+    - type: related_to
+      target: mx_01M2GHK76CSP63RZMP9N9ZWKXN
+      note: when implementing session state tracking or report generation
 ---
 
 # Architecture
@@ -39,6 +58,12 @@ last_updated: 2026-08-16
 
 User speaks → audio capture via WASAPI loopback → transcribed by STT (local Whisper or cloud) → transcript streamed to overlay UI → user edits/annotates in editor → session tracker records progress → reports generated from session data → notes/findings persisted to local store.
 
+<!-- mex:entity
+id: mx_01M2GHK6J4YSVMT4W920R28RRX
+type: component
+status: promoted
+revision: 1
+-->
 ## Key Components
 
 - **MainWindow** — PySide6 top-level window holding overlay, editor, checklist, and report views. Composition root for UI state and settings.
@@ -49,6 +74,12 @@ User speaks → audio capture via WASAPI loopback → transcribed by STT (local 
 - **ReportGenerator** — builds findings from session context, formats for display in report view.
 - **NotesStore** — persistent JSON-based storage, handles backups and session restoration.
 
+<!-- mex:entity
+id: mx_01M2GHK6H2CZ09FNZB446ZW731
+type: component
+status: promoted
+revision: 1
+-->
 ## External Dependencies
 
 - **PySide6** — GUI framework; all UI components are Qt-based. Cannot be unit-tested on Linux without QT_QPA_PLATFORM=offscreen.
@@ -57,6 +88,12 @@ User speaks → audio capture via WASAPI loopback → transcribed by STT (local 
 - **Anthropic SDK** — cloud transcription and LLM analysis; used when local Whisper unavailable or for confidence scoring.
 - **NumPy** — core dependency, used throughout for audio frame manipulation and DSP operations.
 
+<!-- mex:entity
+id: mx_01M2GHK6FBJN1GVAR816F2RGZR
+type: component
+status: promoted
+revision: 1
+-->
 ## What Does NOT Exist Here
 
 - No database server — all persistence is file-based (JSON). Session state lives in `AppData\Local\interview-prep-recall\`.

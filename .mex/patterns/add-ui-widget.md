@@ -15,15 +15,34 @@ edges:
     condition: when understanding PySide6-specific patterns and constraints
   - target: patterns/track-session-progress.md
     condition: when a widget needs to update or display session state
-grounds_to: []
-last_updated: 2026-08-16
+last_updated: 2026-09-14
+mex:
+  id: mx_01M2GHK748V8AWHDRYGSWJC9XF
+  type: pattern
+  status: promoted
+  revision: 4
+  title: add-ui-widget
+  grounds_to:
+    - node: class:6e32db9af44732d2d30b14b07bc3c2b2
+      fingerprint: mh:64:7b226d696e68617368223a5b383939303735392c393631393038342c33303636333333382c333534353038352c31303332343130332c31313236333331382c363633363132322c34383430333936312c31353935393932372c31313130393635372c31353537343536322c31313236353438362c31373431353239352c31383537323237312c343831303535372c393032393333302c3131333135353632322c373535353739342c34353839353537392c323134373331302c33383137363739372c32363739393939392c313830393030342c393832393038372c373035303231302c34353634323633352c31353436373239372c31303537373234392c35353939353230392c313634363838322c323633383732302c32303731383530392c343431393134332c31333139323230352c35333435323433352c32303535353530322c31393939393132392c363737333533322c32393433363739322c353332323233322c33313938363937392c383131373337302c3832363536312c36363539393130392c353630353534392c343936303734382c35383039323536372c3130323633323734312c373832383038302c363536313337362c33303336353434372c34353338343234322c32333433393030392c383036313235342c31363730373933312c353833373833352c33393934363934322c313830313638392c383538363932332c31303831393534332c393132323439302c32343834353935362c333235313338392c31313732363932355d2c226e65696768626f7273223a5b5d2c22746f6b656e436f756e74223a313437327d
+      bodyHash: 1588e5a1f187ed721db12df14478f6ff121ac109190edf1ee1093231b6dc1e9d
+  relations:
+    - type: related_to
+      target: mx_01M2GHK6R6GR8Z910CVXWDKJFK
+      note: when understanding class naming and structure patterns
+    - type: related_to
+      target: mx_01M2GHK6K4BGKA2Q2EW93N325R
+      note: when understanding how widgets integrate with MainWindow
+    - type: related_to
+      target: mx_01M2GHK76CSP63RZMP9N9ZWKXN
+      note: when a widget needs to update or display session state
 ---
 
 # Add UI Widget
 
 ## Context
 
-All UI components are PySide6-based and live in `interview_prep_recall/ui/`. The [`MainWindow`](mex://class:069d69e10655afbd2725a6920ee0f59d) is the composition root that owns all widgets and connects them to the `Application` instance. New widgets are instantiated in the main window and wired to session/settings callbacks.
+All UI components are PySide6-based and live in `interview_prep_recall/ui/`. The [`MainWindow`](mex://class:6e32db9af44732d2d30b14b07bc3c2b2) is the composition root that owns all widgets and connects them to the `Application` instance. New widgets are instantiated in the main window and wired to session/settings callbacks.
 
 Patterns:
 - Each major widget/view is its own file (e.g., `editor.py`, `checklist.py`, `overlay.py`)

@@ -23,6 +23,22 @@ edges:
 #     fingerprint: "mh:64:<hex>"
 grounds_to: []
 last_updated: 2026-08-16
+mex:
+  id: mx_01M2GHK6R6GR8Z910CVXWDKJFK
+  type: convention
+  status: promoted
+  revision: 4
+  title: conventions
+  relations:
+    - type: related_to
+      target: mx_01M2GHK6K4BGKA2Q2EW93N325R
+      note: when a convention depends on understanding the system structure
+    - type: related_to
+      target: mx_01M2GHK748V8AWHDRYGSWJC9XF
+      note: when following Qt/widget naming and structure conventions
+    - type: related_to
+      target: mx_01M2GHK76CSP63RZMP9N9ZWKXN
+      note: when implementing data models following project conventions
 ---
 
 # Conventions
@@ -33,6 +49,12 @@ last_updated: 2026-08-16
 ```
 -->
 
+<!-- mex:entity
+id: mx_01M2GHK6Q5CX9Z1CF5MQ7MTNX6
+type: convention
+status: promoted
+revision: 1
+-->
 ## Naming
 
 - **Files:** snake_case (`audio_capture.py`, `local_whisper.py`), module structure mirrors class/domain hierarchy.
@@ -41,6 +63,12 @@ last_updated: 2026-08-16
 - **Constants:** UPPER_SNAKE_CASE with semantic grouping by module (e.g., all exit codes grouped in `__main__.py`).
 - **Variables:** Descriptive, avoid abbreviations except where universally known (`VAD` for voice activity detection, `STT` for speech-to-text, `LLM` for language model).
 
+<!-- mex:entity
+id: mx_01M2GHK6P4WHNDE0PHQH236YBT
+type: convention
+status: promoted
+revision: 1
+-->
 ## Structure
 
 - **Module organization:** Each major component (audio, stt, ui, session, notes, report) is a separate package under `interview_prep_recall/`, with `__init__.py` exporting public symbols only.
@@ -48,6 +76,12 @@ last_updated: 2026-08-16
 - **Class pattern:** One primary class per file where possible (e.g., `SessionManager` in `session/manager.py`). Data classes and Protocols colocated in their usage file.
 - **No internal imports:** Avoid circular imports by declaring Protocol contracts at module boundaries. Dependency injection preferred over global state.
 
+<!-- mex:entity
+id: mx_01M2GHK6N459ENC02350VH9ZSN
+type: convention
+status: promoted
+revision: 1
+-->
 ## Patterns
 
 **STT abstraction — use Protocol, never concrete implementations directly:**
@@ -86,6 +120,12 @@ app.settings.update(new_value)
 app.session.is_active = False  # Direct mutation
 ```
 
+<!-- mex:entity
+id: mx_01M2GHK6M5GF03D1SFFCRT1AB3
+type: convention
+status: promoted
+revision: 1
+-->
 ## Verify Checklist
 
 Before presenting any code:
