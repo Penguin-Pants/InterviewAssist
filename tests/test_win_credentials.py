@@ -25,7 +25,10 @@ pytestmark = pytest.mark.windows
 if os.name != "nt":
     pytest.skip("Windows Credential Manager is a Windows API", allow_module_level=True)
 
-import keyring  # noqa: E402
+# `keyring` lives in the `[windows]` extra, not `[dev,ui]` — CI's windows-latest runner
+# installs only the latter (see .github/workflows/ci.yml), so a hard `import keyring`
+# here crashed collection for the *entire* suite on a real CI run, not just this file.
+keyring = pytest.importorskip("keyring", reason="requires the [windows] extra's keyring")
 
 from interview_prep_recall.platform.credentials import (  # noqa: E402
     SERVICE_NAME,
