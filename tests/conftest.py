@@ -143,71 +143,95 @@ def qt_settings_sandbox(tmp_path_factory: pytest.TempPathFactory) -> Iterator[No
     QSettings.setDefaultFormat(previous_format)
 
 
-@pytest.fixture(scope="session")
-def qapp() -> Iterator[object]:
-    """The one `QApplication` for the test session, **with a teardown**.
+def release_qt_widgets() -> None:
+    """Dispatch this test's queued events, then destroy the widgets it built.
 
-    Six test modules each defined their own copy of this and none of them tore anything
-    down, which left every widget ever built alive until interpreter shutdown — where Qt
-    destroys them in whatever order it likes, after the `QApplication` may already be
-    gone. That is an intermittent segfault at exit, and it became reachable once
-    `MainWindow` started owning an overlay and a dialog: the suite reported all tests
-    passing and then the process died with 139, which on CI is a red build with a green
-    test report.
+    Both halves, in that order, and neither is optional.
 
-    Closing and deleting the top-level widgets here destroys them **while the application
-    is still alive**, which is the ordering Qt actually supports.
+    **Draining first** keeps each test's events and its objects inside one lifetime.
+    Anything still queued for a widget the test is about to drop would otherwise be
+    dispatched by whichever test next pumps the loop — the D-66 property.
+
+    **Destroying second** is the part D-66 missed. A widget is not freed when the test's
+    last name for it goes: `DiagnosticsView` stores `self._ask_for_path` on itself and
+    connects `self.refresh` to a button, so it is *cyclic* garbage, and only Python's
+    cyclic collector can free it. Every top-level widget in this suite has a cycle of
+    that shape — `QFrame`, `NotesEditor`, `ImportDialog`, `OverlayPanel`, `MainWindow`,
+    `SettingsDialog`, `DiagnosticsView`, `ReportView`, `FirstRunConsentDialog` — so
+    parentless widgets pile up across modules and a later collection destroys a batch of
+    them at whatever allocation happens to trip the threshold. That allocation is
+    routinely inside a Qt constructor, because a `PySide6` wrapper is a container object:
+    Qt is then tearing down widgets **re-entrantly, part-way through building another
+    one**. On Windows that is an access violation; on Linux it is survivable, which is
+    why only CI sees it.
+
+    Deleting here puts the destruction back under the harness's control, while the
+    `QApplication` is alive and while Qt is not inside anything.
 
     **Only parentless roots are deleted, and never a widget Qt has already destroyed.**
     A `QDialog` parented to a window is *both* a top-level widget and that window's
-    child, so a loop that calls `deleteLater` on everything `topLevelWidgets()` returns
-    queues a deletion for objects their parent is about to delete on the same pass — a
-    double free, which on Windows is an access violation in `processEvents` and on Linux
-    is silently survivable. Deleting the roots and letting Qt cascade is the ordering it
-    documents; `isValid` guards the wrappers whose C++ object went with an earlier root.
+    child, so queuing a deletion for everything `topLevelWidgets()` returns would queue
+    one for objects their parent is about to delete on the same pass — a double free.
+    Deleting the roots and letting Qt cascade is the ordering it documents; `isValid`
+    guards the wrappers whose C++ object went with an earlier root.
 
-    `hide()` first because `close()` may legitimately be **refused** — `NotesEditor` does
-    exactly that when a save was rejected and closing would lose the edits (T3.7) — and
-    destroying a *visible* top-level widget is its own hazard. Both were found by CI on
-    PR #27, which is the fourth destroy-order defect in this fixture's history (D-53,
-    D-54) and the first that only Windows could see.
+    `hide()` rather than `close()` because a close may legitimately be **refused** —
+    `NotesEditor` does exactly that when a save was rejected and closing would lose the
+    edits (T3.7) — and destroying a *visible* top-level widget is its own hazard.
+
+    `sendPostedEvents` is needed because `processEvents` alone does not run deferred
+    deletions, and running them here is the whole point.
+
+    A no-op when Qt is not loaded: the guard keeps this off the non-Qt tests entirely
+    rather than standing a `QApplication` up for them.
     """
-    from PySide6.QtWidgets import QApplication
+    qt = sys.modules.get("PySide6.QtWidgets")
+    if qt is None:
+        return
+    app = qt.QApplication.instance()
+    if app is None:
+        return
+
+    from PySide6.QtCore import QCoreApplication, QEvent
     from shiboken6 import isValid
 
-    app = QApplication.instance() or QApplication([])
-    yield app
+    app.processEvents()
     for widget in list(app.topLevelWidgets()):
         if not isValid(widget) or widget.parent() is not None:
             continue
         widget.hide()
         widget.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     app.processEvents()
 
 
+@pytest.fixture(scope="session")
+def qapp() -> Iterator[object]:
+    """The one `QApplication` for the test session.
+
+    Six test modules each defined their own copy, which left every widget ever built
+    alive until interpreter shutdown — where Qt destroys them in whatever order it likes,
+    after the `QApplication` may already be gone (D-54).
+
+    The teardown that fixed it used to live here, and no longer does. `release_qt_widgets`
+    runs after **every** test instead, so by the time this fixture would have swept there
+    is nothing left to sweep. Per-test is strictly stronger: a session-scoped sweep leaves
+    the widgets of tests 1..n-1 alive and collectable at any allocation in between, which
+    is D-69.
+    """
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    yield app
+
+
 @pytest.fixture(autouse=True)
-def drain_qt_events():
-    """Flush Qt's event queue after every test, **while that test's widgets are alive**.
+def qt_lifetime() -> Iterator[None]:
+    """Give every test's Qt widgets a lifetime that ends with the test.
 
-    An unparented `QDialog` is owned by Python, not by a parent, so it is destroyed the
-    instant a test's last reference goes — immediately, not deferred. Anything still
-    queued for it is then dispatched against freed memory by whichever test next pumps
-    the loop. In this suite that is the overlay's clock test and its two-second
-    `processEvents` spin, which is where the segfault landed: a crash whose cause was
-    twenty test files earlier.
-
-    Draining here keeps each test's events and its objects inside one lifetime, which is
-    the property the session-scoped teardown above cannot provide. **The fifth
-    destroy-order defect in this harness** (D-53, D-54, and PR #27's two), and the second
-    to surface as a crash with every test passing.
-
-    A no-op when Qt is not loaded: the guard keeps this off the non-Qt tests entirely
-    rather than standing a `QApplication` up for them.
+    The sixth destroy-order defect in this harness (D-53, D-54, PR #27's two, and D-66),
+    and the third to surface as a crash with every test reported passing. See
+    `release_qt_widgets` for what it does and why both of its halves are needed.
     """
     yield
-    qt = sys.modules.get("PySide6.QtWidgets")
-    if qt is None:
-        return
-    app = qt.QApplication.instance()
-    if app is not None:
-        app.processEvents()
+    release_qt_widgets()
