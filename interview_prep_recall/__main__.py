@@ -151,6 +151,15 @@ def main(
     gate, notice delivery, the window — is testable with a double. Its default is the
     real construction, which is not finished; see `_build_application`.
     """
+    # T6.4 — FR16. First, before anything else runs: the whole point is that nothing
+    # between here and a crash should be able to hand WER a dump with a transcript in
+    # it. `os.name`, not `sys.platform` — the same check `report/store.py` and T5.2 use,
+    # so every platform-only binding agrees on what "Windows" means.
+    if os.name == "nt":
+        from interview_prep_recall.platform.win_wer import disable_wer_dumps
+
+        disable_wer_dumps()
+
     argv = sys.argv[1:] if argv is None else argv
     root = Path(argv[0]) if argv else app_data_root()
 
