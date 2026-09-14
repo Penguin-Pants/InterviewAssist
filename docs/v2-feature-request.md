@@ -2,9 +2,10 @@
 
 **Status:** Feature request. Not a build plan.
 **Date:** 2026-09-14
-**Revision:** 3. Each revision was reviewed against the codebase rather than against the progress
-log. Revision 1 had eleven confirmed errors, revision 2 had ten. §11 and §12 record every one, so
-the corrections are not silently absorbed.
+**Revision:** 4. Each revision was reviewed against the codebase rather than against the progress
+log. Revision 1 had eleven confirmed errors, revision 2 had ten. Revision 4 answers OQ-14 and
+corrects two claims that `main` overtook. §11, §12 and §13 record every change, so the corrections
+are not silently absorbed.
 **Extends:** `interviewpreprecallprd.md`. Reverses four of its guardrails, each named below with the
 decision that reverses it.
 **Reader:** anyone who has read `docs/implementation/06-progress.md`. If you have not, read §2 first.
@@ -63,15 +64,15 @@ real API key. The right-hand column says which.
 | FR79 separation wall | `report/separation.py` | Tests. Static import check: the report package may not import the overlay |
 | Design system | `docs/prism-design-system.md`, `ui/indicators.py` | PRISM tokens are hand-written into the Qt chrome |
 
-**560 tests pass** in the non-GUI subset. A further 12 Qt modules need a display and run on Windows CI.
+**573 tests pass** in the non-GUI subset. A further 12 Qt modules need a display and run on Windows CI.
 
 ### 2.2 Not built
 
 | Gap | Evidence |
 |---|---|
-| **The app does not start** | `__main__.py:83` raises `NotImplementedError` on purpose (T9.6a) |
+| **No session can start** | T9.6a landed on `main` at `13df252`, so `_build_application` is real and the app now launches. But there is still no audio capture (M1) and no overlay wiring (M5), and `model_present` blocks a session until the weights exist. Launching is not running |
 | **Screen-capture exclusion is a stub** | `platform/win_capture_exclusion.py` is a docstring saying "Not yet implemented". **FR14 and FR14a are v1 requirements and are not met.** The overlay is currently visible in a screen share |
-| No real embedding model | `notes/index.py` defines an `Embedder` Protocol. Only test fakes implement it |
+| The embedder has never encoded anything | `notes/embedder.py` now implements the Protocol (T9.6a). AS-10 records that it has never loaded weights: `all-MiniLM-L6-v2` comes from huggingface.co, which the dev container answers 403 to. The adapter is written from documentation, not against the library |
 | Audio capture never validated on Windows | M1 blockers. D-68 records that an idle loopback endpoint emits no callbacks at all |
 | No packaging | T9.4. No installer, no signing, no update path |
 | No first-run setup wizard | T9.3 |
@@ -112,6 +113,8 @@ Continuing `docs/implementation/00-decisions-and-assumptions.md`. D-U13 is the l
 | **D-U23** | **D-10 is amended: the mic stream feeds the progress tracker *and* the proactive engine.** It still never feeds recall matching. | FR105 needs the user's own speech to detect a contradiction against a `RESUME` chunk. D-10's word was "exclusively", so this is a reversal and is named as one. Recall stays interviewer-only, which is what D-10 was protecting. |
 | **D-U24** | **`Company` is a separate store with its own file and its own schema version. Context-set files are not migrated and stay at schema v2.** | `MIGRATIONS` in `notes/store.py` is per-file, `dict -> dict`, and always ends in `ContextSet.from_dict`. It structurally cannot build a container spanning files. Backfill is a one-time store-level upgrade, not a schema bump. Every embedding cache survives untouched, because cache files are keyed on note-set id. |
 | **D-U25** | **The shared resume is a library, and creating a context set copies the chosen chunks into it.** Shared at the library level, materialised per set. | `EmbeddingIndex.build()`, `Prefilter.note_set`, `ContextSet.verify()` and D-58's snapshot all assume every in-scope note lives in one set. A referenced-but-external source is invisible to all four. Copying keeps every one of those invariants intact. Cost: editing the library does not retro-update existing sets, which is correct anyway, since a past interview must be graded against what you actually had. |
+| **D-U27** | **The resume library holds many named documents, and each one is a `ContextSet` stored through a second `NotesStore`.** | Answers OQ-14. A library document is a name plus a list of chunks, which is exactly `ContextSet`'s shape, so the library inherits atomic write, five-generation backup rotation, corrupt-file recovery and the migration hook without a line of new persistence code. `NotesStore.__init__` hardcodes `root / "notesets"`, so the only change is to make that subdirectory a parameter. |
+| **D-U28** | **A copy into a context set mints fresh note ids and records its origin in `Note.tags`.** | `Note` and `ContextSet` are not touched (D-U24 holds). Fresh ids keep every copy independent, so editing the copy in one interview cannot reach another, and `validate_id`'s FR41 guarantee still holds. `tags` already exists and is already used by matching, so provenance costs no schema change. |
 | **D-U26** | **The suggest lane is its own package (`suggest/`) rendered by its own module (`ui/suggest_panel.py`).** `report/separation.py` is generalised and a second assertion added, so recall cannot import suggest and vice versa. | The existing wall is a static import check between a package and a module. It cannot see inside one module, so two lanes in `ui/overlay.py` would be unenforceable. Splitting the modules makes the mechanism that already works apply unchanged. |
 
 ---
@@ -127,7 +130,9 @@ FR1 to FR87 are taken. Numbering starts at FR90.
 | **FR90** | A **Company** is a named, persisted container. It owns structured fields, context sets and interview sessions. Deleting one deletes everything it owns, after one confirmation naming the counts. |
 | **FR91** | A company carries optional structured fields: display name, website URL, LinkedIn URL, role title, application date, status, free-text notes. URLs are stored and displayed only. Nothing fetches them (D-U19). |
 | **FR92** | A company owns **one or more context sets**, one per interview round. A new set may be seeded by copying an existing set in the same company. |
-| **FR93** | A **resume library** exists at app-root scope. Creating or editing a context set copies chosen resume chunks into that set (D-U25). The library is where you maintain your resume; the set is what an interview is matched and graded against. |
+| **FR93** | A **resume library** exists at app-root scope and holds **many named documents** — a resume tailored per role, a work history, a cover letter, anything of kind `RESUME` (D-U27). Each is created, edited, renamed and deleted independently. The library is where you maintain them; a context set is what an interview is matched and graded against. |
+| **FR115** | Creating or editing a context set **copies chosen library documents into it** (D-U25). Selection defaults to **the documents the most recent context set in the same company used**; a company's first set preselects nothing and requires an explicit choice. Copied chunks skip the FR97 import review, because they were reviewed when they entered the library. |
+| **FR116** | A copied chunk carries a tag naming the library document it came from, so the overlay and the report can say which resume version a point came from (D-U28). Editing a library document **does not** retro-update sets that already copied from it: a past interview must stay graded against what you actually had (D-58). |
 | **FR94** | Every saved session is filed under exactly one company and one context set. The session list filters by company. Sessions that exist before the backfill move to a company named `Unfiled`. |
 | **FR95** | A session may carry meeting metadata entered beforehand: title, scheduled time, and named participants with optional role and LinkedIn URL. Participants are written into the context set as `INTERVIEWER` chunks, so they reach matching by the path that already exists. |
 | **FR111** | Switching company is an explicit operation with the same guarantees as FR43's set switch: **refused while a session is running**. It rebuilds the four things `activate_context_set` rebuilds — the active `ContextSet`, `EmbeddingIndex.build()`, the prefilter's set reference, and the tracker's set reference plus its reset — and one new one, the session list's company filter (FR94). A company's **most recently used context set** becomes active; if it has none, the switch creates an empty one rather than leaving no active set. |
@@ -194,7 +199,8 @@ user identity, no tenancy and no isolation boundary, and none is being introduce
 
 ```
 App root
-├── resume library  (RESUME chunks, copied into sets on use)   FR93, D-U25
+├── library/notesets/<uuid>.json   many named RESUME documents   FR93, D-U27
+│                                   a ContextSet each, same store
 ├── companies/<uuid>.json        NEW STORE, own schema version  D-U24
 │   └── fields, ordered context-set ids, last-used set id       FR91, FR111
 ├── notesets/<uuid>.json         UNCHANGED, stays schema v2
@@ -259,11 +265,12 @@ session can be read or written off-platform. It is listed in §8 as such.
 | `tracker/` and mic routing | The mic stream gains a second consumer (D-U23) | D-10 said "exclusively". The amendment is explicit so a later reader does not read it as drift |
 | `notes/importer.py` | Two extractors, one chunking strategy | PDF extraction quality varies wildly. FR98 is the guard |
 | new company store | New module beside `notes/store.py`, reusing its atomic-write and rotation shape | Do not fold it into the note-set schema (D-U24) |
+| resume library | **No new store.** A second `NotesStore` rooted at `library/`, which needs its subdirectory name to become a parameter instead of the hardcoded `"notesets"` | The one-line change is in a file whose durability guarantees the safety review called the highest risk in the product. Change it with its tests, not around them |
 | `report/store.py` | Company id in the index, plus §6.3's backfill | Encrypted index. A failed read must stop, not rebuild |
 | `app.py` | `activate_company` beside `activate_context_set` (FR111) | Must refuse mid-session, as FR43 already does for sets |
 | `platform/win_capture_exclusion.py` | Implement it (FR114) | Currently a docstring. A v1 requirement, unmet |
 | `platform/` | Protocol per capability (FR110) | Pure refactor. Tests should prove behaviour did not change |
-| `ui/` | **`main_window.py` is rewritten into a workspace shell. Every other dialog is kept and embedded as a component** — `overlay.py`, `editor.py`, `report_view.py`, `settings.py`, `indicators.py`, `diagnostics_view.py`, `import_notes.py`, `restore.py`, `checklist.py`, `match_feed.py`. Plus the wizard (FR108), company editor, suggest panel and proactive tray | `ui/` is 5,741 of the app's 14,570 lines. Confining the rewrite to the one window that is currently a settings panel keeps the overlay's contrast sweeps, its geometry work and the PRISM tokens, and keeps their tests meaningful |
+| `ui/` | **`main_window.py` is rewritten into a workspace shell. Every other dialog is kept and embedded as a component** — `overlay.py`, `editor.py`, `report_view.py`, `settings.py`, `indicators.py`, `diagnostics_view.py`, `import_notes.py`, `restore.py`, `checklist.py`, `match_feed.py`. Plus the wizard (FR108), company editor, suggest panel and proactive tray | `ui/` is 5,741 of the app's 14,873 lines. Confining the rewrite to the one window that is currently a settings panel keeps the overlay's contrast sweeps, its geometry work and the PRISM tokens, and keeps their tests meaningful |
 | `__main__.py` | Finish `_build_application`. Real embedder. No-API-key policy | Blocks everything |
 
 ---
@@ -277,14 +284,14 @@ rough and are for ordering, not for planning.
 
 | PR | Agent can do | Only you can do | Size |
 |---|---|---|---|
-| **1. Make it run** | Composition root, no-API-key policy, wizard (FR108), embedder behind its Protocol | **Run the first-launch model download** (huggingface.co is blocked here, AS-9) | L |
+| **1. Make it run** | ~~Composition root, no-API-key policy, embedder behind its Protocol~~ **Landed on `main` at `13df252` (T9.6a).** Remaining: the wizard (FR108) | **Run the first-launch model download** (huggingface.co is blocked here, AS-9 and AS-10) | S, was L |
 | **2. Windows reality** | Latency harness, device-enumeration code, D-68 keep-alive wiring | **Run M1 on your Windows 11 machine with a real audio device.** Nothing downstream is trustworthy until this passes | M + hardware |
 | **3. Capture exclusion** | `SetWindowDisplayAffinity` via ctypes (FR114, FR14, FR14a) | **Verify on a real screen share.** Headless cannot test this | S + hardware |
 | **3b. UI shell decision** | — | Already taken: new shell, existing dialogs kept as components (§7) | — |
 | **4. Company store** | New store, FR90 to FR92, FR111, §6.2 backfill | — | L |
 | **5. Session filing** | FR94, FR95, §6.3 record backfill | **Run the backfill.** Windows-only: `default_cipher()` raises elsewhere (D-40) | M + hardware |
-| **6. Resume library** | FR93, copy-into-set, library editor | — | M |
-| **7. Ingestion** | PDF and DOCX, FR96 to FR98 | Supply real resumes and job ads as fixtures | M |
+| **6. Resume library** | FR93, FR115, FR116, the `NotesStore` subdirectory parameter, copy-into-set, library editor | — | M |
+| **7. Ingestion** | PDF and DOCX, FR96 to FR98, multi-document import into the library | Supply real resumes and job ads as fixtures | M |
 | **8. App shell** | Workspace UI (FR107), company editor, PRISM applied | Judge it at a glance, as with FR72's 1 m test | L |
 | **9. Separation wall** | Generalise `separation.py`, add FR113's assertions, with tests first | — | S |
 | **10. Conversation state** | FR103, FR112 sixth purge hook, FR59 amended | — | M |
@@ -359,7 +366,7 @@ it is named rather than discovered.
 |---|---|---|---|
 | **OQ-12** | Which model serves the suggest lane? The selector's Haiku is tuned for a one-token enum, not for drafting | Needs PR 2's latency numbers | PR 11 |
 | **OQ-13** | Does the suggest lane need its own confidence floor, or does it inherit the prefilter's τ? | Design | PR 11 |
-| **OQ-14** | Is the resume library one document or many? | You | PR 6 **and PR 7** — the answer decides whether the importer handles one resume or a set of them |
+| ~~**OQ-14**~~ | **RESOLVED 2026-09-14: many documents.** Became D-U27, D-U28, FR93, FR115 and FR116 | — | Answered |
 | **OQ-15** | How do a proactive alert and a recall snippet share the overlay when both fire? | Design | PR 12 |
 | **OQ-16** | What signs the installer, and at what cost? | You | PR 15 |
 | **OQ-17** | What exactly does FR101's acknowledgement say? | You | PR 11 |
@@ -428,5 +435,47 @@ Four review findings were **dropped** rather than fixed:
 - *"D-U25, D-U26 and FR112 are not implemented in the code."* They are requirements in a feature
   request. Reporting that a requirement is unbuilt is not a finding.
 
-Line counts in this document are measured, not estimated: **14,570** lines under
-`interview_prep_recall/`, **15,206** under `tests/`, across 35 test files.
+Line counts in this document are measured, not estimated. As of `13df252`: **14,873** lines under
+`interview_prep_recall/`, **15,483** under `tests/`, across 36 test files, 573 passing in the
+non-GUI subset.
+
+---
+
+## 13. What changed in revision 4
+
+Two causes: OQ-14 was answered, and `main` moved underneath revision 3.
+
+### OQ-14 answered: the resume library holds many documents
+
+This was the cheap question with the expensive consequence, and the consequence turned out to be
+cheaper than expected, because the shape already exists.
+
+- **D-U27.** A library document is a name plus a list of chunks. That is exactly `ContextSet`, so
+  the library is a second `NotesStore` rooted at `library/` rather than a new store. It inherits
+  atomic write, five-generation backup rotation, corrupt-file recovery and the migration hook. The
+  only code change is making `NotesStore`'s hardcoded `"notesets"` subdirectory a parameter.
+- **D-U28.** A copy mints fresh note ids and records its origin in `Note.tags`. `tags` already
+  exists and matching already reads it, so provenance needs no schema change and D-U24's promise
+  that `Note` and `ContextSet` stay untouched still holds.
+- **FR115** settles selection. Defaulting to *every* library document would be actively wrong once
+  the library holds several tailored resumes: you would be matched against a version you did not
+  send. So the default is what the company's most recent set used, and a company's first set
+  preselects nothing.
+- **FR116** settles the direction of change. Editing a library document does not reach back into
+  sets that already copied from it, because D-58 grades a past interview against what you actually
+  had at the time.
+
+### Two claims `main` overtook
+
+Revision 3 was written against `3c8485c`. `main` is now at `13df252`, and T9.6a landed in between.
+
+| Claim in revision 3 | Now |
+|---|---|
+| "The app does not start. `__main__.py:83` raises `NotImplementedError` on purpose" | **`_build_application` is implemented and the app launches.** No session can start yet: no audio capture (M1), no overlay wiring (M5), and `model_present` blocks until the weights exist. Launching is not running |
+| "No real embedding model. Only test fakes implement the Protocol" | **`notes/embedder.py` implements it.** AS-10 records that it has never loaded weights, for the same 403 as AS-9 |
+
+PR 1's agent half is therefore done, and it is re-sized from L to S. The split in §8 held up: what
+remains of PR 1 is the first-run download, which was already marked as yours.
+
+The app could not be launched here to confirm, because PySide6 needs `libEGL` and this container
+lacks it — the same reason the 12 Qt test modules do not run here. **Stated rather than claimed.**
