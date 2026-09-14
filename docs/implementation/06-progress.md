@@ -241,6 +241,53 @@ conservative choice, just a broken one.
 
 ## Log
 
+### The sixth destroy-order defect — a test's widgets now die with the test · 2026-09-14
+
+**Windows CI died inside a Qt constructor with every test reported passing.** The fault dump
+named `diagnostics_view.py:87` — `QTableWidget(0, len(COLUMNS), self)` — reached from
+`test_diagnostics_view.py:140`. `pytest` exited 1 with no failing test. Intermittent: the commits
+either side of it were green.
+
+**It is not the test that crashed.** D-66 assumed an unparented widget dies the instant a test's
+last reference to it goes. It does not. Every top-level widget in this suite holds a bound method
+of its own: `DiagnosticsView` stores `self._ask_for_path` on `self` and connects `self.refresh` to
+a button. That is a reference cycle, so the widget is cyclic garbage and only Python's collector
+can free it — and Python picks the moment.
+
+**Measured, not reasoned.** A `pytest_runtest_teardown` probe printed the parentless top-level
+widgets alive after each test across the twelve Qt modules. They accumulate and are then freed in
+batches: `QFrame` 9313 sightings, `NotesEditor` 3854, `ImportDialog` 743, `OverlayPanel` 391,
+`MainWindow` 391, `SettingsDialog` 119, `DiagnosticsView` 69, `ReportView` 21,
+`FirstRunConsentDialog` 12. Five `DiagnosticsView` instances survived their own module, stayed
+alive through the whole of `test_overlay.py`, and went in one pass in the middle of an unrelated
+parametrised case.
+
+**Why the crash lands in a constructor.** A `PySide6` wrapper is a container object, so allocating
+one can trip the collector. Qt then destroys a batch of widgets **re-entrantly, part-way through
+building another one**. Windows faults; Linux survives, which is why only CI could see it. A
+standalone reproduction in this container leaked 40 views, then observed a collection start with
+all 40 pending *while the loop was constructing `QDialog`/`QTableWidget` pairs* — the exact shape
+of the dump, minus the access violation Linux does not raise.
+
+**The fix is in the harness, because the shape is in every module.** `release_qt_widgets` drains
+the queue (D-66's property, kept) and then hides and deletes every parentless top-level widget,
+flushing `DeferredDelete` so the C++ objects are actually gone. The autouse `qt_lifetime` fixture
+runs it after every test. The session-scoped sweep D-54 added is **deleted**, not kept beside it:
+per-test is strictly stronger, and the session sweep now finds nothing. Same probe after the fix:
+zero leftovers, anywhere.
+
+**`tests/test_qt_harness.py` is new, and is the point.** Five destroy-order defects were fixed here
+before it existed and not one of them left an assertion behind — only a docstring. It states the
+precondition (an unparented widget outlives the frame that built it), the guarantee (the C++ object
+is gone when the sweep returns), the double-free guard (a dialog parented to a window is left to
+its parent), and the no-Qt no-op.
+
+**Verified:** 1251 passing, 20 consecutive combined runs of the thirteen Qt modules clean, ruff,
+format and `mypy interview_prep_recall` unchanged. Recorded as **D-69**. Nothing was skipped,
+quarantined or marked flaky. The Linux container can run the Qt modules after `apt-get install
+libegl1 libgl1` — worth knowing, since "these cannot run here" is what kept the previous five
+defects on Windows CI.
+
 ### T9.6a — real dependency construction · complete · 2026-09-14
 
 **`python -m interview_prep_recall` now starts.** It did not before: `_build_application` raised
