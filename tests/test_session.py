@@ -325,6 +325,20 @@ def test_purge_resets_health() -> None:
     assert m.monitor.health == Health()
 
 
+def test_purge_preserves_capture_excluded() -> None:
+    """FR14a's warning is a fact about the window, set once at construction — not
+    session state, and `end_session()` must not silently clear it. Found by Codex
+    review on PR #43: a failed exclusion's persistent warning was disappearing after
+    the first interview ended, with the overlay still unprotected."""
+    m = started()
+    m.monitor.update(capture_excluded=False, loopback=Status.OK)
+
+    m.end_session()
+
+    assert m.monitor.health.capture_excluded is False
+    assert m.monitor.health.loopback is Status.OFF
+
+
 def test_purge_never_touches_notes(app_data, tmp_path) -> None:  # type: ignore[no-untyped-def]
     """FR58. The worst outcome this codebase can produce is a panic clear that
     destroys the user's prep, so it is asserted against real files."""
