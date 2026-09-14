@@ -2,7 +2,7 @@
 
 **Status:** Feature request. Not a build plan.
 **Date:** 2026-09-14
-**Revision:** 7. Each revision was reviewed against the codebase rather than against the progress
+**Revision:** 8. Each revision was reviewed against the codebase rather than against the progress
 log. Revision 1 had eleven confirmed errors, revision 2 had ten. Revision 4 answers OQ-14 and
 corrects two claims that `main` overtook. §11, §12 and §13 record every change, so the corrections
 are not silently absorbed.
@@ -131,6 +131,7 @@ Continuing `docs/implementation/00-decisions-and-assumptions.md`. D-U13 is the l
 | **D-U38** | **There is no text-to-speech in this product.** | Recorded as a decision rather than an omission so it does not drift back in. The product listens and displays; it never emits audio. Any future audio output would be captured by the app's own loopback and mic streams, so it would need echo suppression against itself before it could be considered at all. |
 | **D-U39** | **A catalogue refresh never changes a lane's saved model. Only the user does.** | FR134's fallback is therefore **runtime-only and never written to config**: a lane whose model is briefly unavailable falls back for that run, reports it, and resumes on the saved model when the provider serves it again. Writing the fallback to disk would turn a transient outage into a permanent silent downgrade. |
 | **D-U40** | **The Anthropic floor is a per-family minimum, not a date cutoff: Opus 4.7 and later, Sonnet 4.5 and later.** | **A date cutoff would be wrong here.** Sonnet 4.5 was released before Opus 4.7, so any single date that admits Opus 4.7 excludes Sonnet 4.5, and any date that admits Sonnet 4.5 also admits Opus models the floor is meant to hide. The floor is expressed as one minimum per family, and a family the floor does not name is admitted on its own merits rather than blocked by default. |
+| **D-U41** | **A newer model is signalled by a passive marker in the picker, and nowhere else.** No notification, no dialog, no badge, nothing outside the settings surface. | Answers OQ-24 and completes D-U39: if nothing auto-upgrades, the user needs a way to notice, and the quietest one that works is a mark beside the model they are already looking at. The marker never prompts and never preselects. |
 | **D-U26** | **The suggest lane is its own package (`suggest/`) rendered by its own module (`ui/suggest_panel.py`).** `report/separation.py` is generalised and a second assertion added, so recall cannot import suggest and vice versa. | The existing wall is a static import check between a package and a module. It cannot see inside one module, so two lanes in `ui/overlay.py` would be unenforceable. Splitting the modules makes the mechanism that already works apply unchanged. |
 
 ---
@@ -213,6 +214,7 @@ FR1 to FR87 are taken. Numbering starts at FR90.
 | **FR132** | The list is **curated before display**. Three rules: a **floor**, expressed as a minimum per model family rather than a cutoff date (D-U40); **non-conversational models are filtered out entirely**, because a provider's model endpoint also returns embedding, moderation and audio models that are not candidates for any lane here; and the remainder is sorted newest first. A **"show everything"** toggle reveals the unfiltered list for a user who wants a model the floor hides. |
 | **FR132a** | The floors are: **OpenAI** — nothing before GPT-5. **Anthropic** — Opus 4.7 and later, Sonnet 4.5 and later. A family neither floor names is admitted and judged by FR133's per-lane rules. **STT providers carry no floor**: each serves a small number of current models, so a floor would filter nothing. |
 | **FR133** | A lane only offers models it can actually use. The **stage-2 selector** offers only models whose provider can constrain output at decode time for that model (FR127) — notably excluding any model where forced tool use has been withdrawn — and the **analysis lanes** exclude Haiku-tier models per FR124. A model the lane cannot use is not shown for that lane rather than shown and then rejected. |
+| **FR135** | The picker shows a **passive marker** beside a lane whose family has a newer model than the one saved (D-U41). It is informational: it never prompts, never preselects, and appears on no surface other than the picker. **It is suppressed while the bundled fallback list is in use** (FR131), because a stale list can as easily invent a newer model as miss one, and a marker that is sometimes wrong is worse than none. |
 | **FR134** | **A configured model that is no longer served is a handled state, not a crash.** On a model-not-found error the app names the model, says it is unavailable, and falls back to that lane's default for that run, recording it to the diagnostics ring. **The saved configuration is not rewritten** (D-U39): if the model is served again, the lane resumes on it without the user touching anything. Only the user changes a lane's saved model. |
 
 ### 4.5 Product surface
@@ -438,7 +440,7 @@ it is named rather than discovered.
 | **OQ-21** | How aggressive is "conservative" distillation in practice? The rule is written; the ratio it produces on a real 45-minute interview is unmeasured | You, on a real transcript | PR 16 |
 | ~~**OQ-22**~~ | **RESOLVED 2026-09-14.** OpenAI: nothing before GPT-5. Anthropic: Opus 4.7 and later, Sonnet 4.5 and later, as per-family minimums (D-U40). STT providers: no floor. Became FR132a | — | Answered |
 | ~~**OQ-23**~~ | **RESOLVED 2026-09-14: never.** A refresh never changes a saved model, and FR134's fallback is runtime-only (D-U39) | — | Answered |
-| **OQ-24** | How does the user learn a newer model exists, given that nothing auto-upgrades them? A passive marker in the picker is the cheap answer; a notice is the loud one | You | PR 18 |
+| ~~**OQ-24**~~ | **RESOLVED 2026-09-14: a passive marker in the picker, no notification.** Became D-U41 and FR135 | — | Answered |
 | **OQ-13** | Does the suggest lane need its own confidence floor, or does it inherit the prefilter's τ? | Design | PR 11 |
 | ~~**OQ-14**~~ | **RESOLVED 2026-09-14: many documents.** Became D-U27, D-U28, FR93, FR115 and FR116 | — | Answered |
 | **OQ-15** | How do a proactive alert and a recall snippet share the overlay when both fire? | Design | PR 12 |
@@ -706,3 +708,19 @@ The floor is therefore one minimum per family:
 FR133 still applies on top: the selector lane hides any model whose provider cannot constrain output
 at decode time for it, and the analysis lanes hide Haiku-tier models per FR124. The floor decides
 what is old; FR133 decides what a given lane can actually use.
+
+---
+
+## 17. What changed in revision 8
+
+OQ-24 answered: **a passive marker in the picker, and nothing else.** No notification, no dialog, no
+badge, no surface outside settings. It informs; it never prompts and never preselects (D-U41,
+FR135).
+
+One condition on it. **The marker is suppressed while the bundled fallback list is in use.** An
+offline or stale list can invent a newer model as easily as it can miss one, and a marker that is
+sometimes wrong is worse than no marker — it would teach the user to ignore the one signal the
+design gives them.
+
+That closes every open question raised in this document except the three that need measurement:
+OQ-12 and OQ-20 wait on PR 2's latency numbers, and OQ-21 waits on a real transcript.
