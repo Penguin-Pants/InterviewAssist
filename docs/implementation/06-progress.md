@@ -13,7 +13,7 @@ Updated at the end of every milestone. Newest entry at the top of the log.
 | Milestone | Status | Notes |
 |---|---|---|
 | **M0 — Scaffold** | ✅ Complete | 20 tests passing, lint + format + mypy clean |
-| **M1 — Audio capture spike** | 🟢 **Ran on the target machine 2026-08-16** · gate did **not** fire | Enumeration, loopback capture and a 60 s dual-stream run all pass; both streams at 100%, drift 40 ms of a 50 ms budget. Found **D-68** — an idle loopback endpoint delivers *no frames at all*. Remaining: **T1.5** (keep-alive tests), **T1.6** (the 60-minute run), and the human halves of T1.1 and T1.4. |
+| **M1 — Audio capture spike** | 🟢 **Ran on the target machine 2026-08-16** · gate did **not** fire | Enumeration, loopback capture and a 60 s dual-stream run all pass; both streams at 100%, drift 40 ms of a 50 ms budget. Found **D-68** — an idle loopback endpoint delivers *no frames at all*. **T1.5 done 2026-09-15.** Remaining: **T1.6** (the 60-minute run) and the human halves of T1.1 and T1.4. |
 | **M2 — STT interface & local backend** | 🟢 T2.1–T2.3 complete | Interface, local backend, assembler. T2.4 is the **AS-1 latency gate** and genuinely needs the target laptop. T2.2's model adapter is unverified (**AS-9**) |
 | **M3 — Notes store & indexing** | ✅ **Complete** | T3.1–T3.9 **and T3.7a**. Store, importer, index, editor, set lifecycle, backup restore **and the import surface**. Nothing in M3 is outstanding |
 | **M4 — Matching pipeline** | 🟢 T4.1–T4.6 complete | T4.7 **blocked**: needs the user's labelled fixtures |
@@ -146,7 +146,7 @@ with more force than ever: **test the reason, not the label.**
 
 | Item | Was blocked by | Status now |
 |---|---|---|
-| ~~**M1 — T1.1, T1.2, T1.4**~~ (WASAPI capture, the **AS-2 gate**) | No Linux wheel or sdist; no `/dev/snd`; no sound subsystem. | **Ran 2026-08-16.** Gate did not fire. See the M1 log entry. Outstanding: **T1.5**, **T1.6**, two more video apps for T1.1, and T1.4's change-notification half. |
+| ~~**M1 — T1.1, T1.2, T1.4**~~ (WASAPI capture, the **AS-2 gate**) | No Linux wheel or sdist; no `/dev/snd`; no sound subsystem. | **Ran 2026-08-16.** Gate did not fire. See the M1 log entry. **T1.5 done 2026-09-15.** Outstanding: **T1.6**, two more video apps for T1.1, and T1.4's change-notification half. |
 | **T2.4** — latency harness, the **AS-1 gate** | Must be measured **CPU-only on the D-U6 laptop** (see the D-U6 discipline above). A container figure would validate hardware most sessions will not run on. | Nothing here; it is a measurement on named hardware |
 | ~~**T5.2** — capture exclusion~~ | ✅ **Built and wired 2026-09-14.** `platform/win_capture_exclusion.py` implements the call; `main_window.py` applies it to the overlay's real handle and pushes the result through `HealthMonitor`. Unit-tested (stubbed success/failure/exception/no-`windll`). Outstanding: the FR14 6-way manual matrix — real Zoom/Teams/Meet, a person's eyes | — |
 | **T6.4** — privacy trace | ✅ **`win_wer.py` built and wired 2026-09-14** (`disable_wer_dumps()`, called from `__main__.main()` before anything else runs — verified via MS docs that `SEM_NOGPFAULTERRORBOX` means WER is not invoked for the process at all, not just that its dialog is hidden). Unit-tested (correct flags, idempotent, silent on failure/no-`windll`). What remains is the acceptance criterion itself: a **45-minute Process Monitor trace over a simulated session**, a real tool and a person watching it — `tests/conftest.py`'s `write_allowlist` fixture is already the per-test version of the same allowlist check, active since M0 | — |
@@ -240,6 +240,38 @@ conservative choice, just a broken one.
 ---
 
 ## Log
+
+### T1.5 — keep-alive tests · complete · 2026-09-15
+
+**The half of D-68's fix with no tests now has four.** `CaptureStream._start_keep_alive` has run
+for real once, on the target machine during M1, and nothing since had exercised its four
+branches against a fake. Added to `tests/test_audio_capture.py`:
+
+* A loopback device opens a keep-alive stream and reports `keep_alive_active`.
+* A microphone never attempts one — `_wants_keep_alive` gates on `DeviceKind.LOOPBACK`, and the
+  test asserts no output-side `pa.open` call happened at all, not just that the property reads
+  false.
+* `stop()` closes the **capture** stream before the keep-alive, checked as an exact event order
+  (`stop:input`, `close:input`, `stop:output`, `close:output`) rather than a looser "both closed"
+  assertion — closing the keep-alive first would let the endpoint go idle while capture is still
+  open, the exact defect it exists to prevent.
+* A keep-alive open that fails (no matching render device) lands in `keep_alive_error` rather than
+  raising, and the main capture stream still opens.
+
+**`FakePyAudio`, `FakeStream` and `raw_endpoint` moved from `test_audio_devices.py` to
+`tests/helpers.py`.** `render_device_for`'s five tests already built this double; T1.5 needed the
+same one, including its `open_error` hook for the output side, which existed already and had no
+caller until now. Duplicating it would have been the same drift `helpers.py`'s own docstring
+already warns about — two copies of a PortAudio fake disagreeing quietly over time.
+
+**Verified:** all four new tests pass, the pre-existing 33 audio tests are unchanged after the
+extraction, the full non-`device`/`slow` suite runs with zero failures, ruff and mypy clean on
+`interview_prep_recall/audio/` and on the touched test files. `ruff`/`mypy` were not installed on
+this machine's Python — this pass installed the project's own `[dev]` extra rather than skipping
+the gate. **Not re-verified here:** the suite's total test count. `--collect-only` reports 591
+items but the run summary reports 605 passed+skipped outcomes on this interpreter (Python 3.14,
+not the 3.12 AGENTS.md names) — a pre-existing gap unrelated to T1.5, worth someone's four minutes
+before it is trusted either way.
 
 ### The sixth destroy-order defect — a test's widgets now die with the test · 2026-09-14
 
