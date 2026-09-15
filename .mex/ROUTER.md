@@ -16,7 +16,7 @@ edges:
     condition: when starting a task — check the pattern index for a matching pattern file
   - target: AGENTS.md
     condition: for project identity, non-negotiables, and commands (read at session start)
-last_updated: 2026-09-14
+last_updated: 2026-09-15
 ---
 
 # Session Bootstrap
@@ -71,8 +71,8 @@ authoritative build log — read it before trusting this summary. It tracks its 
 **Known issues:**
 - **D-68** (found and fixed 2026-08-16): an idle WASAPI loopback endpoint delivers zero callbacks
   instead of frames of silence. Fixed with a keep-alive render stream. Unit tests for the fix
-  (T1.5) are not written yet, and the 60-minute soak (T1.6, the AS-2 gate) has only run for 60
-  seconds so far.
+  (T1.5) landed 2026-09-15 — all four cases pass. The 60-minute soak (T1.6, the AS-2 gate) has
+  only run for 60 seconds so far.
 - **AS-1** (local STT latency gate, T2.4) and **AS-3/AS-7** (matching-accuracy gates, T4.7) have
   NOT been measured yet, despite older notes in `00-decisions-and-assumptions.md` reading as if
   they had — T4.7 additionally needs the user's hand-labelled transcripts plus an
