@@ -16,6 +16,7 @@ from typing import Any
 
 import numpy as np
 import pytest
+from helpers import FakePyAudio, raw_endpoint
 
 from interview_prep_recall.audio.capture import (
     FRAME_BYTES,
@@ -42,105 +43,6 @@ def raw_device(index: int, name: str, *, rate: int = 48_000, channels: int = 2) 
         "maxInputChannels": channels,
         "defaultSampleRate": float(rate),
     }
-
-
-def raw_endpoint(
-    index: int,
-    name: str,
-    *,
-    host_api: int = 2,
-    inputs: int = 0,
-    outputs: int = 0,
-    rate: int = 48_000,
-) -> dict[str, Any]:
-    """One row of the flat device table `get_device_info_by_index` walks."""
-    return {
-        "index": index,
-        "name": name,
-        "hostApi": host_api,
-        "maxInputChannels": inputs,
-        "maxOutputChannels": outputs,
-        "defaultSampleRate": float(rate),
-    }
-
-
-class FakeStream:
-    """A PortAudio stream handle, recording its lifecycle into a shared event list so
-    ordering between two streams is assertable."""
-
-    def __init__(self, label: str, events: list[str]) -> None:
-        self.label = label
-        self._events = events
-        self.started = False
-        self.closed = False
-
-    def start_stream(self) -> None:
-        self.started = True
-        self._events.append(f"start:{self.label}")
-
-    def stop_stream(self) -> None:
-        self._events.append(f"stop:{self.label}")
-
-    def close(self) -> None:
-        self.closed = True
-        self._events.append(f"close:{self.label}")
-
-
-class FakePyAudio:
-    """The slice of `pyaudiowpatch` the device layer touches."""
-
-    def __init__(
-        self,
-        loopbacks: list[dict[str, Any]] | None = None,
-        mic: dict[str, Any] | None = None,
-        default_output: dict[str, Any] | None = None,
-        *,
-        has_convenience_getter: bool = True,
-        table: list[dict[str, Any]] | None = None,
-        open_error: Exception | None = None,
-    ) -> None:
-        self._loopbacks = loopbacks or []
-        self._mic = mic
-        self._default_output = default_output
-        self._table = table or []
-        self._open_error = open_error
-        self.opened: list[dict[str, Any]] = []
-        self.events: list[str] = []
-        if has_convenience_getter:
-            self.get_default_wasapi_loopback = self._default_wasapi_loopback  # type: ignore[method-assign]
-
-    def get_device_count(self) -> int:
-        """One past the highest index, not the row count.
-
-        PortAudio indices are positional, and these tables use the real machine's sparse
-        numbering for readability — so the gaps have to be walkable. Lookups into a gap
-        raise, which is the path `render_device_for` skips over.
-        """
-        return max((int(d["index"]) for d in self._table), default=-1) + 1
-
-    def get_device_info_by_index(self, index: int) -> dict[str, Any]:
-        for device in self._table:
-            if int(device["index"]) == index:
-                return device
-        raise OSError(f"no device at index {index}")
-
-    def open(self, **kwargs: Any) -> FakeStream:
-        if self._open_error is not None and kwargs.get("output"):
-            raise self._open_error
-        self.opened.append(kwargs)
-        return FakeStream("output" if kwargs.get("output") else "input", self.events)
-
-    def _default_wasapi_loopback(self) -> dict[str, Any] | None:
-        return self._loopbacks[0] if self._loopbacks else None
-
-    def get_loopback_device_info_generator(self):  # type: ignore[no-untyped-def]
-        yield from self._loopbacks
-
-    def get_default_output_device_info(self) -> dict[str, Any]:
-        return self._default_output or {}
-
-    def get_default_input_device_info(self) -> dict[str, Any] | None:
-        return self._mic
 
 
 # ---------- selection ----------
